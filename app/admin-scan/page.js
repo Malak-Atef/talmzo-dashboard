@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import QrScanner from 'qr-scanner';
+import { Html5Qrcode } from 'html5-qrcode';
 import {
   collection,
   addDoc,
@@ -24,9 +24,10 @@ export default function AdminScanPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [toast, setToast] = useState(null);
 
+  const scanner = useRef(null);
   const videoRef = useRef(null);
-  const qrScannerRef = useRef(null);
 
+  // جلب الجلسات
   useEffect(() => {
     const fetchSessions = async () => {
       try {
@@ -44,48 +45,52 @@ export default function AdminScanPage() {
     fetchSessions();
   }, [t]);
 
-  const startScanner = () => {
+  // بدء المسح
+  const startScanner = async () => {
     if (!selectedSession) {
       setToast({ message: t('selectSessionFirst'), type: 'error' });
       return;
     }
+
     if (!videoRef.current) return;
 
     setIsScanning(true);
+    setToast(null);
 
-    qrScannerRef.current = new QrScanner(
-      videoRef.current,
-      (result) => {
-        handleScannedUserId(result.data);
-        qrScannerRef.current?.stop();
-        setIsScanning(false);
-        setTimeout(() => {
-          if (qrScannerRef.current) {
-            qrScannerRef.current.start();
-          }
-        }, 1500);
-      },
-      {
-        onDecodeError: () => {},
-        highlightScanRegion: true,
-        highlightCodeOutline: true,
-        workerPath: '/qr-scanner-worker.min.js',
-      }
-    );
+    try {
+      const html5QrCode = new Html5Qrcode(videoRef.current.id);
+      scanner.current = html5QrCode;
 
-    qrScannerRef.current
-      .start()
-      .catch((err) => {
-        console.error('Camera error:', err);
-        setToast({ message: t('cameraAccessDenied'), type: 'error' });
-        setIsScanning(false);
-      });
+      const qrCodeSuccessCallback = async (decodedText) => {
+        handleScannedUserId(decodedText);
+        html5QrCode.stop().then(() => {
+          setIsScanning(false);
+          setTimeout(() => startScanner(), 1500);
+        });
+      };
+
+      const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+      await html5QrCode.start(
+        { facingMode: "environment" }, // الكاميرا الخلفية
+        config,
+        qrCodeSuccessCallback,
+        (errorMessage) => {
+          // تجاهل أخطاء المسح
+        }
+      );
+    } catch (err) {
+      console.error('Scanner error:', err);
+      setToast({ message: t('cameraAccessDenied'), type: 'error' });
+      setIsScanning(false);
+    }
   };
 
+  // إيقاف المسح عند الخروج
   useEffect(() => {
     return () => {
-      if (qrScannerRef.current) {
-        qrScannerRef.current.destroy();
+      if (scanner.current) {
+        scanner.current.stop().catch(() => {});
       }
     };
   }, []);
@@ -136,7 +141,6 @@ export default function AdminScanPage() {
 
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-6 px-4">
-      {/* رأس الصفحة */}
       <div className="text-center mb-6 w-full max-w-md">
         <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
           <span className="text-xl text-primary">📱</span>
@@ -153,7 +157,6 @@ export default function AdminScanPage() {
           </div>
         ) : (
           <>
-            {/* اختيار الجلسة */}
             <div className="mb-5">
               <label className="block font-semibold text-dark mb-2">{t('selectSession')}</label>
               <select
@@ -162,10 +165,6 @@ export default function AdminScanPage() {
                 onChange={(e) => {
                   const sess = sessions.find((s) => s.id === e.target.value);
                   setSelectedSession(sess);
-                  if (qrScannerRef.current && isScanning) {
-                    qrScannerRef.current.stop();
-                    setIsScanning(false);
-                  }
                 }}
               >
                 <option value="">{t('selectSessionPlaceholder')}</option>
@@ -177,13 +176,9 @@ export default function AdminScanPage() {
               </select>
             </div>
 
-            {/* عرض الكاميرا */}
+            {/* منطقة الكاميرا */}
             <div className="relative bg-gray-900 rounded-xl overflow-hidden mb-5" style={{ height: '320px' }}>
-              <video
-                ref={videoRef}
-                className="w-full h-full object-cover"
-                playsInline
-              />
+              <div id="reader" ref={videoRef} className="w-full h-full"></div>
               {!isScanning && selectedSession && (
                 <button
                   onClick={startScanner}
@@ -198,7 +193,6 @@ export default function AdminScanPage() {
           </>
         )}
 
-        {/* رجوع للرئيسية */}
         <div className="mt-6 text-center">
           <Link href="/" className="text-secondary font-medium hover:underline flex items-center justify-center gap-1">
             ← {t('backToHome')}
@@ -206,7 +200,6 @@ export default function AdminScanPage() {
         </div>
       </div>
 
-      {/* Toast الإشعار */}
       {toast && (
         <Toast
           message={toast.message}
