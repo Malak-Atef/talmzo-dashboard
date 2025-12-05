@@ -100,5 +100,11 @@
     "manageParticipantsDescription": "أضف المشاركين يدويًا أو برفع ملف Excel لطباعة كروت QR",
   "enterFullName": "الرجاء إدخال الاسم الكامل",
     "printCardsDescription": "اطبع كروت QR لكل المشاركين المسجلين في النظام. كل كارت يحتوي على معلومات الحضور الخاصة بالمشارك.",
-  "noCardsMessage": "لا توجد كروت للطباعة. الرجاء رفع قائمة المشاركين أولًا."
+  "noCardsMessage": "لا توجد كروت للطباعة. الرجاء رفع قائمة المشاركين أولًا.",
+    "scanOrSelectParticipant": "امسح QR أو اختر المشارك يدويًا",
+  "openCamera": "افتح الكاميرا",
+  "selectParticipantManually": "اختر من القائمة",
+  "loadingParticipants": "جارٍ تحميل المشاركين...",
+  "noParticipants": "لا توجد أسماء مسجلة",
+  "failedToLoadParticipants": "فشل تحميل المشاركين"
 }

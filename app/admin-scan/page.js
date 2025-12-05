@@ -19,13 +19,14 @@ import Toast from '../components/Toast';
 export default function AdminScanPage() {
   const t = useTranslation();
   const [sessions, setSessions] = useState([]);
+  const [participants, setParticipants] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [toast, setToast] = useState(null);
 
   const scanner = useRef(null);
-  const videoRef = useRef(null);
 
   // جلب الجلسات
   useEffect(() => {
@@ -45,6 +46,29 @@ export default function AdminScanPage() {
     fetchSessions();
   }, [t]);
 
+  // جلب المشاركين عند اختيار جلسة
+  useEffect(() => {
+    if (selectedSession) {
+      setLoadingParticipants(true);
+      const fetchParticipants = async () => {
+        try {
+          const q = query(collection(db, 'participants'));
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+          setParticipants(list);
+        } catch (err) {
+          console.error('Error loading participants:', err);
+          setToast({ message: t('failedToLoadParticipants'), type: 'error' });
+        } finally {
+          setLoadingParticipants(false);
+        }
+      };
+      fetchParticipants();
+    } else {
+      setParticipants([]);
+    }
+  }, [selectedSession, t]);
+
   // بدء المسح
   const startScanner = async () => {
     if (!selectedSession) {
@@ -52,13 +76,14 @@ export default function AdminScanPage() {
       return;
     }
 
-    if (!videoRef.current) return;
+    const readerElement = document.getElementById('qr-reader');
+    if (!readerElement) return;
 
     setIsScanning(true);
     setToast(null);
 
     try {
-      const html5QrCode = new Html5Qrcode(videoRef.current.id);
+      const html5QrCode = new Html5Qrcode('qr-reader');
       scanner.current = html5QrCode;
 
       const qrCodeSuccessCallback = async (decodedText) => {
@@ -69,15 +94,11 @@ export default function AdminScanPage() {
         });
       };
 
-      const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
       await html5QrCode.start(
-        { facingMode: "environment" }, // الكاميرا الخلفية
-        config,
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         qrCodeSuccessCallback,
-        (errorMessage) => {
-          // تجاهل أخطاء المسح
-        }
+        () => {}
       );
     } catch (err) {
       console.error('Scanner error:', err);
@@ -86,7 +107,6 @@ export default function AdminScanPage() {
     }
   };
 
-  // إيقاف المسح عند الخروج
   useEffect(() => {
     return () => {
       if (scanner.current) {
@@ -96,9 +116,17 @@ export default function AdminScanPage() {
   }, []);
 
   const handleScannedUserId = async (userId) => {
+    await saveAttendance(userId);
+  };
+
+  const handleManualCheckIn = async (userId, name) => {
+    await saveAttendance(userId, name);
+  };
+
+  const saveAttendance = async (userId, displayNameFallback = null) => {
     if (!selectedSession || !userId) return;
 
-    let displayName = userId;
+    let displayName = displayNameFallback || userId;
     try {
       const userQuery = query(collection(db, 'participants'), where('qrId', '==', userId));
       const userSnapshot = await getDocs(userQuery);
@@ -146,10 +174,10 @@ export default function AdminScanPage() {
           <span className="text-xl text-primary">📱</span>
         </div>
         <h1 className="text-2xl font-bold text-dark">{t('adminScan')}</h1>
-        <p className="text-gray-600 text-sm mt-1">{t('scanParticipantQR')}</p>
+        <p className="text-gray-600 text-sm mt-1">{t('scanOrSelectParticipant')}</p>
       </div>
 
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md space-y-6">
         {loading ? (
           <div className="text-center py-10">
             <div className="inline-block h-6 w-6 animate-spin rounded-full border-3 border-primary border-t-transparent"></div>
@@ -157,7 +185,8 @@ export default function AdminScanPage() {
           </div>
         ) : (
           <>
-            <div className="mb-5">
+            {/* اختيار الجلسة */}
+            <div>
               <label className="block font-semibold text-dark mb-2">{t('selectSession')}</label>
               <select
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
@@ -176,28 +205,60 @@ export default function AdminScanPage() {
               </select>
             </div>
 
-            {/* منطقة الكاميرا */}
-            <div className="relative bg-gray-900 rounded-xl overflow-hidden mb-5" style={{ height: '320px' }}>
-              <div id="reader" ref={videoRef} className="w-full h-full"></div>
-              {!isScanning && selectedSession && (
-                <button
-                  onClick={startScanner}
-                  className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-6 py-3 rounded-full font-bold shadow-lg hover:bg-primary/90 transition z-10"
-                >
-                  {t('startScanning')}
-                </button>
-              )}
-            </div>
+            {/* الكاميرا */}
+            {selectedSession && (
+              <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
+                <h3 className="font-bold text-dark mb-3">{t('scanQR')}</h3>
+                <div className="relative bg-gray-900 rounded-xl overflow-hidden h-64">
+                  <div id="qr-reader" className="w-full h-full"></div>
+                  {!isScanning && (
+                    <button
+                      onClick={startScanner}
+                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-5 py-2 rounded-lg font-medium z-10"
+                    >
+                      📷 {t('openCamera')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
-            <p className="text-center text-gray-500 text-sm">{t('scanQR')}</p>
+            {/* القائمة اليدوية */}
+            {selectedSession && (
+              <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
+                <h3 className="font-bold text-dark mb-3">{t('selectParticipantManually')}</h3>
+                {loadingParticipants ? (
+                  <p className="text-center text-gray-500">{t('loadingParticipants')}</p>
+                ) : participants.length === 0 ? (
+                  <p className="text-center text-gray-500">{t('noParticipants')}</p>
+                ) : (
+                  <div className="max-h-60 overflow-y-auto space-y-2">
+                    {participants.map((p) => (
+                      <div
+                        key={p.qrId}
+                        className="flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
+                      >
+                        <span>{p.name}</span>
+                        <button
+                          onClick={() => handleManualCheckIn(p.qrId, p.name)}
+                          className="btn-primary px-3 py-1 text-sm"
+                        >
+                          {t('checkIn')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="text-center">
+              <Link href="/" className="text-secondary font-medium hover:underline flex items-center justify-center gap-1">
+                ← {t('backToHome')}
+              </Link>
+            </div>
           </>
         )}
-
-        <div className="mt-6 text-center">
-          <Link href="/" className="text-secondary font-medium hover:underline flex items-center justify-center gap-1">
-            ← {t('backToHome')}
-          </Link>
-        </div>
       </div>
 
       {toast && (

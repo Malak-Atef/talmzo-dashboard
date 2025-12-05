@@ -86,6 +86,12 @@
    "manageParticipantsDescription": "Add participants manually or upload an Excel file to print QR cards",
   "enterFullName": "Please enter a full name",
     "printCardsDescription": "Print QR cards for all participants registered in the system. Each card contains the participant's attendance information.",
-  "noCardsMessage": "No cards to print. Please upload participants first."
+  "noCardsMessage": "No cards to print. Please upload participants first.",
+    "scanOrSelectParticipant": "Scan QR or select participant manually",
+  "openCamera": "Open Camera",
+  "selectParticipantManually": "Select from list",
+  "loadingParticipants": "Loading participants...",
+  "noParticipants": "No participants registered",
+  "failedToLoadParticipants": "Failed to load participants"
 
 }
