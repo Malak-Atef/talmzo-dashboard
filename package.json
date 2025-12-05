@@ -2,12 +2,13 @@
   "name": "talmzo-dashboard",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev --webpack",
-    "build": "next build --webpack",
+ "scripts": {
+    "dev": "next dev",
+    "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "next lint"
   },
+  
   "dependencies": {
     "firebase": "^12.5.0",
     "html5-qrcode": "^2.3.8",
