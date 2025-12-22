@@ -86,12 +86,9 @@ export default function SessionsPage() {
                       </p>
                     )}
                   </div>
-                  <Link
-                    href={`/check-in/${session.id}`}
-                    className="btn-primary px-5 py-2 text-center whitespace-nowrap"
-                  >
-                    {t('checkIn')}
-                  </Link>
+                  <Link href="/admin-scan" className="...">
+                     {t('adminScan')}
+                    </Link>
                 </div>
               </div>
             ))}
