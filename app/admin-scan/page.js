@@ -117,20 +117,9 @@ useEffect(() => {
         });
       };
 
-    await html5QrCode.start(
+      await html5QrCode.start(
         { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: {
-            width: 250,
-            height: 250,
-            borderRadius: 8, // زوايا دائرية (اختياري)
-          },
-          videoConstraints: {
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-        },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         qrCodeSuccessCallback,
         () => {}
       );
