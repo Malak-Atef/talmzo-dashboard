@@ -71,9 +71,10 @@ function AdminScanContent() {
 
   // جلب المشاركين عند تحديد الجلسة
 // جلب المشاركين دائمًا عند تحديد الجلسة (حتى لو وصلنا من رابط)
+// جلب المشاركين فقط إذا تم تحديد الجلسة
 useEffect(() => {
   if (selectedSession) {
-    setLoadingParticipants(true);
+    setLoadingParticipants(true); // ← نبدأ التحميل
     const fetchParticipants = async () => {
       try {
         const q = query(collection(db, 'participants'));
@@ -83,15 +84,18 @@ useEffect(() => {
       } catch (err) {
         console.error('Error loading participants:', err);
         setToast({ message: t('failedToLoadParticipants'), type: 'error' });
+        setParticipants([]); // حتى لو فشل، نخليها فاضية مش undefined
       } finally {
-        setLoadingParticipants(false);
+        setLoadingParticipants(false); // ← نوقف التحميل في النهاية دائمًا
       }
     };
     fetchParticipants();
   } else {
+    // لو ما فيش جلسة، نخلي القائمة فاضية ونوقف التحميل
     setParticipants([]);
+    setLoadingParticipants(false);
   }
-}, [selectedSession, t]); // ← ما تغيرش الـ dependency
+}, [selectedSession, t]);
   // بدء المسح
   const startScanner = async () => {
     if (!selectedSession) {
@@ -252,42 +256,36 @@ useEffect(() => {
               </div>
             )}
 
-            {selectedSession && (
-              <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
-                <h3 className="font-bold text-dark mb-3">
-                  {t('selectParticipantManually')}
-                </h3>
-                {loadingParticipants ? (
-                  <p className="text-center text-gray-500">
-                    {t('loadingParticipants')}
-                  </p>
-                ) : participants.length === 0 ? (
-                  <p className="text-center text-gray-500">
-                    {t('noParticipants')}
-                  </p>
-                ) : (
-                  <div className="max-h-60 overflow-y-auto space-y-2">
-                    {participants.map((p) => (
-                      <div
-                        key={p.qrId}
-                        className="flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
-                      >
-                        <span>{p.name}</span>
-                        <button
-                          onClick={() =>
-                            handleManualCheckIn(p.qrId, p.name)
-                          }
-                          className="btn-primary px-3 py-1 text-sm"
-                        >
-                          {t('checkIn')}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
+{/* القائمة اليدوية */}
+{selectedSession && (
+  <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
+    <h3 className="font-bold text-dark mb-3">
+      {t('selectParticipantManually')}
+    </h3>
+    {loadingParticipants ? (
+      <p className="text-center text-gray-500">{t('loadingParticipants')}</p>
+    ) : participants.length === 0 ? (
+      <p className="text-center text-gray-500">{t('noParticipants')}</p>
+    ) : (
+      <div className="max-h-60 overflow-y-auto space-y-2">
+        {participants.map((p) => (
+          <div
+            key={p.qrId}
+            className="flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
+          >
+            <span>{p.name}</span>
+            <button
+              onClick={() => handleManualCheckIn(p.qrId, p.name)}
+              className="btn-primary px-3 py-1 text-sm"
+            >
+              {t('checkIn')}
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
             <div className="text-center">
               <Link
                 href="/"
