@@ -106,5 +106,24 @@
   "selectParticipantManually": "اختر من القائمة",
   "loadingParticipants": "جارٍ تحميل المشاركين...",
   "noParticipants": "لا توجد أسماء مسجلة",
-  "failedToLoadParticipants": "فشل تحميل المشاركين"
+  "failedToLoadParticipants": "فشل تحميل المشاركين",
+    "conferences": "المؤتمرات",
+  "selectOrCreateConference": "اختر مؤتمرًا من القائمة أو أضف مؤتمرًا جديدًا",
+  "addNewConference": "إضافة مؤتمر جديد",
+  "conferenceName": "اسم المؤتمر",
+  "noConferencesYet": "لا توجد مؤتمرات حتى الآن",
+  "eventId": "معرف المؤتمر",
+  "eventAddedSuccessfully": "تمت إضافة المؤتمر بنجاح!",
+  "failedToAddEvent": "فشل إضافة المؤتمر",
+  "failedToLoadEvents": "فشل تحميل المؤتمرات",
+    "backToConferences": "العودة إلى المؤتمرات",
+  "currentConferenceId": "معرف المؤتمر الحالي",
+    "backToDashboard": "العودة إلى لوحة التحكم",
+      "missingEventOrSession": "لم يتم تحديد مؤتمر أو جلسة",
+  "noSessionAvailable": "لا توجد جلسة متاحة",
+  "noSessionsAvailable": "لا توجد جلسات متاحة لهذا المؤتمر",
+    "forConference": "للمؤتمر",
+      "sessionNotBelongToEvent": "الجلسة لا تنتمي إلى هذا المؤتمر"
+
+
 }

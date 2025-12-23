@@ -2,7 +2,7 @@
 'use client';
 
 import { Suspense, useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   collection,
@@ -22,44 +22,68 @@ import Toast from '../components/Toast';
 function AdminScanContent() {
   const t = useTranslation();
   const searchParams = useSearchParams();
-  const sessionIdFromUrl = searchParams.get('sessionId');
+  const router = useRouter();
+  const eventId = searchParams.get('eventId');
+  const sessionId = searchParams.get('sessionId');
 
-  // ✅ حالة مستقرة: id الجلسة المطلوبة (من الرابط أو null)
-  const [targetSessionId] = useState(sessionIdFromUrl || null);
   const [sessionData, setSessionData] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [toast, setToast] = useState(null);
+  const [sessionsList, setSessionsList] = useState([]);
 
   const scanner = useRef(null);
 
-  // ✅ تحميل الجلسة + المشاركين في مرة واحدة
+  // إذا دخل بدون eventId وبدون sessionId → يوجه لصفحة المؤتمرات
+  useEffect(() => {
+    if (!eventId && !sessionId) {
+      router.push('/events');
+    }
+  }, [eventId, sessionId, router]);
+
+  // تحميل الجلسة والمشاركين
   useEffect(() => {
     const loadData = async () => {
-      if (!targetSessionId) {
-        setLoading(false);
-        return;
-      }
+      setLoading(true);
 
       try {
-        // تحميل بيانات الجلسة
-        const sessionDoc = await getDoc(doc(db, 'sessions', targetSessionId));
-        if (!sessionDoc.exists()) {
-          setToast({ message: t('sessionNotFound'), type: 'error' });
-          setLoading(false);
-          return;
+        // 1. تحميل الجلسة (إذا وُجد sessionId)
+        let session = null;
+        if (sessionId) {
+          const sessionDoc = await getDoc(doc(db, 'sessions', sessionId));
+          if (sessionDoc.exists()) {
+            session = { id: sessionDoc.id, ...sessionDoc.data() };
+            setSessionData(session);
+          } else {
+            setToast({ message: t('sessionNotFound'), type: 'error' });
+            setLoading(false);
+            return;
+          }
+        } else if (eventId) {
+          // 2. لو ما فيش sessionId، نحمل الجلسات لعرض القائمة
+          const q = query(
+            collection(db, 'sessions'),
+            where('eventId', '==', eventId)
+          );
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+          setSessionsList(list);
         }
-        const session = { id: sessionDoc.id, ...sessionDoc.data() };
-        setSessionData(session);
 
-        // تحميل جميع المشاركين (لا نحتاج تصفية هنا)
-        const q = query(collection(db, 'participants'));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setParticipants(list);
+        // 3. تحميل المشاركين (استخدم eventId إذا متوفر، وإلا استخدم من الجلسة)
+        const targetEventId = eventId || (session?.eventId);
+        if (targetEventId) {
+          const q = query(
+            collection(db, 'participants'),
+            where('eventId', '==', targetEventId)
+          );
+          const snapshot = await getDocs(q);
+          const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+          setParticipants(list);
+        }
       } catch (err) {
-        console.error('Error loading session or participants:', err);
+        console.error('Error loading data:', err);
         setToast({ message: t('failedToLoadSessions'), type: 'error' });
       } finally {
         setLoading(false);
@@ -67,26 +91,7 @@ function AdminScanContent() {
     };
 
     loadData();
-  }, [targetSessionId, t]);
-
-  // تحميل قائمة الجلسات (فقط لو دخلت من /admin-scan بدون sessionId)
-  const [sessions, setSessions] = useState([]);
-  useEffect(() => {
-    if (targetSessionId === null) {
-      const loadSessions = async () => {
-        try {
-          const q = query(collection(db, 'sessions'));
-          const snapshot = await getDocs(q);
-          const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-          setSessions(list);
-        } catch (err) {
-          console.error('Error loading sessions:', err);
-          setToast({ message: t('failedToLoadSessions'), type: 'error' });
-        }
-      };
-      loadSessions();
-    }
-  }, [targetSessionId]);
+  }, [eventId, sessionId, t]);
 
   // بدء المسح بالكاميرا
   const startScanner = async () => {
@@ -145,7 +150,17 @@ function AdminScanContent() {
   };
 
   const saveAttendance = async (userId, displayNameFallback = null) => {
-    if (!sessionData || !userId) return;
+    if (!eventId || (!sessionData && sessionsList.length === 0)) {
+      setToast({ message: t('missingEventOrSession'), type: 'error' });
+      return;
+    }
+
+    // تحديد الجلسة النشطة
+    const activeSession = sessionData || sessionsList[0];
+    if (!activeSession) {
+      setToast({ message: t('noSessionAvailable'), type: 'error' });
+      return;
+    }
 
     let displayName = displayNameFallback || userId;
     try {
@@ -164,7 +179,7 @@ function AdminScanContent() {
     try {
       const attendanceQuery = query(
         collection(db, 'attendance'),
-        where('sessionId', '==', sessionData.id),
+        where('sessionId', '==', activeSession.id),
         where('userId', '==', userId)
       );
       const snapshot = await getDocs(attendanceQuery);
@@ -174,8 +189,10 @@ function AdminScanContent() {
       const action = lastRecord?.action === 'check-in' ? 'check-out' : 'check-in';
       const actionText = action === 'check-in' ? t('checkIn') : t('checkOut');
 
+      // ← حفظ eventId مع الحضور
       await addDoc(collection(db, 'attendance'), {
-        sessionId: sessionData.id,
+        eventId: eventId, // ← مهم جدًا للعزل
+        sessionId: activeSession.id,
         userId: userId,
         action: action,
         timestamp: serverTimestamp(),
@@ -188,8 +205,38 @@ function AdminScanContent() {
     }
   };
 
+  const handleSelectSession = (sessId) => {
+    const sess = sessionsList.find(s => s.id === sessId);
+    if (sess) {
+      setSessionData(sess);
+    }
+  };
+
+  if (!eventId && !sessionId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-6 px-4">
+      {/* رأس الصفحة */}
+      <div className="text-end w-full max-w-md mb-4">
+        {eventId && (
+          <Link
+            href={`/?eventId=${eventId}`}
+            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+          >
+            ← {t('backToDashboard')}
+          </Link>
+        )}
+      </div>
+
       <div className="text-center mb-6 w-full max-w-md">
         <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
           <span className="text-xl text-primary">📱</span>
@@ -252,46 +299,51 @@ function AdminScanContent() {
               )}
             </div>
           </>
-        ) : targetSessionId === null ? (
-          // عرض قائمة الجلسات فقط لو دخلت من الرابط المباشر
+        ) : sessionsList.length > 0 ? (
+          // عرض قائمة الجلسات (إذا دخل بدون sessionId)
           <div>
             <label className="block font-semibold text-dark mb-2">
               {t('selectSession')}
             </label>
             <select
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-              value={sessions.length > 0 && sessions[0]?.id ? sessions[0].id : ''}
-              onChange={(e) => {
-                const sess = sessions.find((s) => s.id === e.target.value);
-                if (sess) {
-                  // تغيير الرابط لتضمين sessionId (لتحسين الاستخدام)
-                  window.location.href = `/admin-scan?sessionId=${sess.id}`;
-                }
-              }}
+              onChange={(e) => handleSelectSession(e.target.value)}
+              value={sessionData?.id || ''}
             >
               <option value="">{t('selectSessionPlaceholder')}</option>
-              {sessions.map((sess) => (
+              {sessionsList.map((sess) => (
                 <option key={sess.id} value={sess.id}>
                   {sess.sessionName}
                 </option>
               ))}
             </select>
           </div>
-        ) : null}
+        ) : (
+          <p className="text-center text-gray-500">{t('noSessionsAvailable')}</p>
+        )}
 
         <div className="text-center">
-          <Link
-            href="/"
-            className="text-secondary font-medium hover:underline flex items-center justify-center gap-1"
-          >
-            ← {t('backToHome')}
-          </Link>
+          {eventId ? (
+            <Link
+              href={`/?eventId=${eventId}`}
+              className="text-secondary font-medium hover:underline flex items-center justify-center gap-1"
+            >
+              ← {t('backToDashboard')}
+            </Link>
+          ) : (
+            <Link
+              href="/events"
+              className="text-secondary font-medium hover:underline flex items-center justify-center gap-1"
+            >
+              ← {t('backToConferences')}
+            </Link>
+          )}
         </div>
       </div>
 
       {toast && (
-        <Toast
-          message={toast.message}
+        Toast,
+        message={toast.message}
           type={toast.type === 'error' ? 'error' : 'success'}
           onClose={() => setToast(null)}
         />

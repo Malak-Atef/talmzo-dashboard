@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import {
   collection,
   getDocs,
@@ -20,18 +20,31 @@ import Toast from '../../../components/Toast';
 export default function SessionReportDetail() {
   const t = useTranslation();
   const params = useParams();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const sessionId = params?.id;
+  const eventId = searchParams.get('eventId');
+
   const [sessionData, setSessionData] = useState(null);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
+  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
   useEffect(() => {
-    if (!sessionId) return;
+    if (!eventId) {
+      router.push('/events');
+      return;
+    }
+  }, [eventId, router]);
+
+  useEffect(() => {
+    if (!sessionId || !eventId) return;
 
     const fetchData = async () => {
       try {
+        // تحميل بيانات الجلسة
         const sessionRef = doc(db, 'sessions', sessionId);
         const sessionSnap = await getDoc(sessionRef);
 
@@ -42,11 +55,22 @@ export default function SessionReportDetail() {
           return;
         }
 
-        setSessionData({ id: sessionSnap.id, ...sessionSnap.data() });
+        const session = { id: sessionSnap.id, ...sessionSnap.data() };
+        // التحقق من أن الجلسة تنتمي للمؤتمر الحالي
+        if (session.eventId !== eventId) {
+          setSessionData(null);
+          setToast({ message: t('sessionNotBelongToEvent'), type: 'error' });
+          setLoading(false);
+          return;
+        }
 
+        setSessionData(session);
+
+        // تحميل سجلات الحضور الخاصة بالمؤتمر والجلسة
         const q = query(
           collection(db, 'attendance'),
           where('sessionId', '==', sessionId),
+          where('eventId', '==', eventId),
           orderBy('timestamp', 'asc')
         );
         const snapshot = await getDocs(q);
@@ -57,6 +81,7 @@ export default function SessionReportDetail() {
         }));
         setAttendanceRecords(records);
 
+        // حساب الملخص
         const userMap = {};
         records.forEach((rec) => {
           if (!userMap[rec.userId]) {
@@ -105,12 +130,32 @@ export default function SessionReportDetail() {
     };
 
     fetchData();
-  }, [sessionId, t]);
+  }, [sessionId, eventId, t]);
+
+  if (!eventId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-4xl">
         {/* رأس الصفحة */}
+        <div className="text-end mb-4">
+          <Link
+            href={`/reports?eventId=${eventId}`}
+            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+          >
+            ← {t('backToReports')}
+          </Link>
+        </div>
+
         <div className="text-center mb-8">
           <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
             <span className="text-xl text-primary">🔍</span>
@@ -127,7 +172,7 @@ export default function SessionReportDetail() {
         ) : !sessionData ? (
           <div className="text-center py-12 bg-white rounded-2xl shadow border border-gray-100">
             <p className="text-red-600 text-lg">{t('sessionNotFound')}</p>
-            <Link href="/reports" className="text-secondary font-medium mt-4 inline-block hover:underline">
+            <Link href={`/reports?eventId=${eventId}`} className="text-secondary font-medium mt-4 inline-block hover:underline">
               ← {t('backToReports')}
             </Link>
           </div>
@@ -213,7 +258,7 @@ export default function SessionReportDetail() {
             {/* رجوع للتقارير */}
             <div className="text-center">
               <Link
-                href="/reports"
+                href={`/reports?eventId=${eventId}`}
                 className="inline-flex items-center gap-1 text-secondary font-medium hover:underline"
               >
                 ← {t('backToReports')}

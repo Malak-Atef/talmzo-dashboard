@@ -1,7 +1,8 @@
 // app/add-session/page.js
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslation } from '../useTranslation';
 import { useLanguage } from '../LanguageContext';
 import { db } from '../../firebase/config';
@@ -12,6 +13,9 @@ import Link from 'next/link';
 export default function AddSession() {
   const t = useTranslation();
   const { lang } = useLanguage();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const eventId = searchParams.get('eventId');
 
   const [sessionName, setSessionName] = useState('');
   const [sessionType, setSessionType] = useState('');
@@ -19,6 +23,13 @@ export default function AddSession() {
   const [groupName, setGroupName] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
+
+  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
+  useEffect(() => {
+    if (!eventId) {
+      router.push('/events');
+    }
+  }, [eventId, router]);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -30,6 +41,7 @@ export default function AddSession() {
 
     try {
       await addDoc(collection(db, 'sessions'), {
+        eventId, // ← إضافة eventId هنا
         sessionName,
         sessionType,
         attendanceMode,
@@ -50,10 +62,30 @@ export default function AddSession() {
     }
   };
 
+  if (!eventId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-xl">
         {/* رأس الصفحة */}
+        <div className="text-end mb-6">
+          <Link
+            href={`/?eventId=${eventId}`}
+            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+          >
+            ← {t('backToDashboard')}
+          </Link>
+        </div>
+
         <div className="text-center mb-8">
           <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl text-primary">➕</span>
@@ -131,7 +163,7 @@ export default function AddSession() {
               </button>
 
               <Link
-                href="/"
+                href={`/?eventId=${eventId}`}
                 className="flex-1 py-3 text-center rounded-lg font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
               >
                 {t('cancel')}

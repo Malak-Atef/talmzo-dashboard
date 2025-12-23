@@ -2,7 +2,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import * as XLSX from 'xlsx';
 import Link from 'next/link';
@@ -11,19 +12,43 @@ import Toast from '../components/Toast';
 
 export default function ReportsPage() {
   const t = useTranslation();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const eventId = searchParams.get('eventId');
+
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
+  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
   useEffect(() => {
+    if (!eventId) {
+      router.push('/events');
+      return;
+    }
+
     const fetchAllData = async () => {
       try {
-        const sessionsSnapshot = await getDocs(query(collection(db, 'sessions'), orderBy('createdAt', 'desc')));
+        // تحميل الجلسات الخاصة بالمؤتمر
+        const sessionsSnapshot = await getDocs(
+          query(
+            collection(db, 'sessions'),
+            where('eventId', '==', eventId),
+            orderBy('createdAt', 'desc')
+          )
+        );
         const sessionsList = sessionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        const attendanceSnapshot = await getDocs(collection(db, 'attendance'));
+        // تحميل سجلات الحضور الخاصة بالمؤتمر
+        const attendanceSnapshot = await getDocs(
+          query(
+            collection(db, 'attendance'),
+            where('eventId', '==', eventId)
+          )
+        );
         const attendanceList = attendanceSnapshot.docs.map(doc => doc.data());
 
+        // تحسين بيانات الجلسات
         const enrichedSessions = sessionsList.map(sess => {
           const sessionAttendance = attendanceList.filter(a => a.sessionId === sess.id);
           const uniqueUsers = [...new Set(sessionAttendance.map(a => a.userId))];
@@ -49,7 +74,7 @@ export default function ReportsPage() {
     };
 
     fetchAllData();
-  }, [t]);
+  }, [eventId, t, router]);
 
   const exportToExcel = () => {
     try {
@@ -88,10 +113,30 @@ export default function ReportsPage() {
     }
   };
 
+  if (!eventId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-6xl">
         {/* رأس الصفحة */}
+        <div className="text-end mb-4">
+          <Link
+            href={`/?eventId=${eventId}`}
+            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+          >
+            ← {t('backToDashboard')}
+          </Link>
+        </div>
+
         <div className="text-center mb-10">
           <div className="w-14 h-14 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl text-green-600">📊</span>
@@ -124,7 +169,7 @@ export default function ReportsPage() {
         ) : sessions.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-2xl shadow border border-gray-100">
             <p className="text-gray-600 text-lg mb-4">{t('noReports')}</p>
-            <Link href="/add-session" className="btn-primary px-6 py-2">
+            <Link href={`/add-session?eventId=${eventId}`} className="btn-primary px-6 py-2">
               {t('addSession')}
             </Link>
           </div>
@@ -156,7 +201,8 @@ export default function ReportsPage() {
                       <td className="border-b p-3 text-center">{sess.totalCheckOuts}</td>
                       <td className="border-b p-3 text-center">
                         <Link
-                          href={`/reports/session/${sess.id}`}
+                          // ← تحديث الرابط ليشمل eventId
+                          href={`/reports/session/${sess.id}?eventId=${eventId}`}
                           className="text-secondary font-medium hover:underline"
                         >
                           {t('details')}
@@ -172,8 +218,8 @@ export default function ReportsPage() {
 
         {/* رجوع للرئيسية */}
         <div className="mt-8 text-center">
-          <Link href="/" className="text-gray-600 hover:text-gray-900 font-medium flex items-center justify-center gap-1">
-            ← {t('backToHome')}
+          <Link href={`/?eventId=${eventId}`} className="text-gray-600 hover:text-gray-900 font-medium flex items-center justify-center gap-1">
+            ← {t('backToDashboard')}
           </Link>
         </div>
       </div>

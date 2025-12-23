@@ -1,7 +1,8 @@
 // app/upload-participants/page.js
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -11,6 +12,10 @@ import Toast from '../components/Toast';
 
 export default function UploadParticipantsPage() {
   const t = useTranslation();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const eventId = searchParams.get('eventId');
+
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -19,6 +24,13 @@ export default function UploadParticipantsPage() {
   const [manualName, setManualName] = useState('');
   const [manualTeam, setManualTeam] = useState('');
   const [manualGroup, setManualGroup] = useState('');
+
+  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
+  useEffect(() => {
+    if (!eventId) {
+      router.push('/events');
+    }
+  }, [eventId, router]);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -75,6 +87,7 @@ export default function UploadParticipantsPage() {
       for (const p of preview) {
         const qrId = 'user_' + Math.random().toString(36).substr(2, 9);
         await addDoc(collection(db, 'participants'), {
+          eventId, // ← إضافة eventId هنا
           name: p.name,
           team: p.team,
           group: p.group,
@@ -103,6 +116,7 @@ export default function UploadParticipantsPage() {
     try {
       const qrId = 'user_' + Math.random().toString(36).substr(2, 9);
       await addDoc(collection(db, 'participants'), {
+        eventId, // ← إضافة eventId هنا
         name: manualName.trim(),
         team: manualTeam.trim() || t('notSpecified'),
         group: manualGroup.trim() || t('notSpecified'),
@@ -119,10 +133,30 @@ export default function UploadParticipantsPage() {
     }
   };
 
+  if (!eventId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-3xl">
         {/* رأس الصفحة */}
+        <div className="text-end mb-4">
+          <Link
+            href={`/?eventId=${eventId}`}
+            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+          >
+            ← {t('backToDashboard')}
+          </Link>
+        </div>
+
         <div className="text-center mb-10">
           <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl text-accent">👥</span>
@@ -216,7 +250,7 @@ export default function UploadParticipantsPage() {
         {/* رابط طباعة الكروت */}
         <div className="text-center">
           <Link
-            href="/print-cards"
+            href={`/print-cards?eventId=${eventId}`}
             className="inline-flex items-center gap-2 text-secondary font-medium hover:underline"
           >
             👁️ {t('viewPrintCards')}

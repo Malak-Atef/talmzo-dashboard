@@ -92,6 +92,25 @@
   "selectParticipantManually": "Select from list",
   "loadingParticipants": "Loading participants...",
   "noParticipants": "No participants registered",
-  "failedToLoadParticipants": "Failed to load participants"
+  "failedToLoadParticipants": "Failed to load participants",
+  "conferences": "Conferences",
+  "selectOrCreateConference": "Select a conference or add a new one",
+  "addNewConference": "Add New Conference",
+  "conferenceName": "Conference Name",
+  "noConferencesYet": "No conferences yet",
+  "eventId": "Event ID",
+  "eventAddedSuccessfully": "Conference added successfully!",
+  "failedToAddEvent": "Failed to add conference",
+  "failedToLoadEvents": "Failed to load conferences",
+    "backToConferences": "Back to Conferences",
+  "currentConferenceId": "Current Conference ID",
+    "backToDashboard": "Back to Dashboard",
+      "missingEventOrSession": "Missing event or session",
+  "noSessionAvailable": "No session available",
+  "noSessionsAvailable": "No sessions available for this conference",
+    "forConference": "for conference",
+      "sessionNotBelongToEvent": "Session does not belong to this conference"
+
+
 
 }
