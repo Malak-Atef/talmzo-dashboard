@@ -70,28 +70,28 @@ function AdminScanContent() {
   }, [sessionIdFromUrl, t]);
 
   // جلب المشاركين عند تحديد الجلسة
-  useEffect(() => {
-    if (selectedSession) {
-      setLoadingParticipants(true);
-      const fetchParticipants = async () => {
-        try {
-          const q = query(collection(db, 'participants'));
-          const snapshot = await getDocs(q);
-          const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-          setParticipants(list);
-        } catch (err) {
-          console.error('Error loading participants:', err);
-          setToast({ message: t('failedToLoadParticipants'), type: 'error' });
-        } finally {
-          setLoadingParticipants(false);
-        }
-      };
-      fetchParticipants();
-    } else {
-      setParticipants([]);
-    }
-  }, [selectedSession, t]);
-
+// جلب المشاركين دائمًا عند تحديد الجلسة (حتى لو وصلنا من رابط)
+useEffect(() => {
+  if (selectedSession) {
+    setLoadingParticipants(true);
+    const fetchParticipants = async () => {
+      try {
+        const q = query(collection(db, 'participants'));
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setParticipants(list);
+      } catch (err) {
+        console.error('Error loading participants:', err);
+        setToast({ message: t('failedToLoadParticipants'), type: 'error' });
+      } finally {
+        setLoadingParticipants(false);
+      }
+    };
+    fetchParticipants();
+  } else {
+    setParticipants([]);
+  }
+}, [selectedSession, t]); // ← ما تغيرش الـ dependency
   // بدء المسح
   const startScanner = async () => {
     if (!selectedSession) {
@@ -117,9 +117,20 @@ function AdminScanContent() {
         });
       };
 
-      await html5QrCode.start(
+    await html5QrCode.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        {
+          fps: 10,
+          qrbox: {
+            width: 250,
+            height: 250,
+            borderRadius: 8, // زوايا دائرية (اختياري)
+          },
+          videoConstraints: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        },
         qrCodeSuccessCallback,
         () => {}
       );
