@@ -86,8 +86,11 @@ export default function SessionsPage() {
                       </p>
                     )}
                   </div>
-                  <Link href="/admin-scan" className="...">
-                     {t('adminScan')}
+                    <Link
+                        href={`/admin-scan?sessionId=${session.id}`}
+                        className="btn-primary px-4 py-2"
+                          >
+                            {t('adminScan')}
                     </Link>
                 </div>
               </div>

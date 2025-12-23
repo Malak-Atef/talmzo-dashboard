@@ -1,7 +1,7 @@
 // app/admin-scan/page.js
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
@@ -19,7 +19,7 @@ import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
 import Toast from '../components/Toast';
 
-export default function AdminScanPage() {
+function AdminScanContent() {
   const t = useTranslation();
   const searchParams = useSearchParams();
   const sessionIdFromUrl = searchParams.get('sessionId');
@@ -34,7 +34,7 @@ export default function AdminScanPage() {
 
   const scanner = useRef(null);
 
-  // جلب الجلسة (إذا وُجد sessionId) أو جميع الجلسات (إذا لم يُوجد)
+  // تحميل جلسة واحدة (إذا وُجد sessionId) أو جميع الجلسات (إذا لم يُوجد)
   useEffect(() => {
     const loadSessionOrSessions = async () => {
       if (sessionIdFromUrl) {
@@ -69,7 +69,7 @@ export default function AdminScanPage() {
     loadSessionOrSessions();
   }, [sessionIdFromUrl, t]);
 
-  // جلب المشاركين فور تحديد الجلسة
+  // جلب المشاركين عند تحديد الجلسة
   useEffect(() => {
     if (selectedSession) {
       setLoadingParticipants(true);
@@ -92,7 +92,7 @@ export default function AdminScanPage() {
     }
   }, [selectedSession, t]);
 
-  // بدء المسح بالكاميرا
+  // بدء المسح
   const startScanner = async () => {
     if (!selectedSession) {
       setToast({ message: t('selectSessionFirst'), type: 'error' });
@@ -139,7 +139,7 @@ export default function AdminScanPage() {
     };
   }, []);
 
-  // معالجة الحضور (من QR أو يدويًا)
+  // منطق تسجيل الحضور
   const handleScannedUserId = async (userId) => {
     await saveAttendance(userId);
   };
@@ -212,7 +212,6 @@ export default function AdminScanPage() {
           </div>
         ) : (
           <>
-            {/* اختيار الجلسة — يظهر فقط لو ما فيش sessionId في الرابط */}
             {!sessionIdFromUrl && (
               <div>
                 <label className="block font-semibold text-dark mb-2">
@@ -236,7 +235,6 @@ export default function AdminScanPage() {
               </div>
             )}
 
-            {/* منطقة الكاميرا — تظهر فقط لو تم تحديد جلسة */}
             {selectedSession && (
               <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
                 <h3 className="font-bold text-dark mb-3">{t('scanQR')}</h3>
@@ -254,7 +252,6 @@ export default function AdminScanPage() {
               </div>
             )}
 
-            {/* القائمة اليدوية — تظهر فقط لو تم تحديد جلسة */}
             {selectedSession && (
               <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
                 <h3 className="font-bold text-dark mb-3">
@@ -311,5 +308,20 @@ export default function AdminScanPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function AdminScanPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <AdminScanContent />
+    </Suspense>
   );
 }
