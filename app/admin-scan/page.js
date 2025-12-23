@@ -341,13 +341,13 @@ function AdminScanContent() {
         </div>
       </div>
 
-      {toast && (
-        Toast,
+        {toast && (
+      <Toast
         message={toast.message}
-          type={toast.type === 'error' ? 'error' : 'success'}
-          onClose={() => setToast(null)}
-        />
-      )}
+        type={toast.type === 'error' ? 'error' : 'success'}
+        onClose={() => setToast(null)}
+      />
+    )}
     </div>
   );
 }
