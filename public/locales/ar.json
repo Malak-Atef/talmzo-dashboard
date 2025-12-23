@@ -123,7 +123,10 @@
   "noSessionAvailable": "لا توجد جلسة متاحة",
   "noSessionsAvailable": "لا توجد جلسات متاحة لهذا المؤتمر",
     "forConference": "للمؤتمر",
-      "sessionNotBelongToEvent": "الجلسة لا تنتمي إلى هذا المؤتمر"
+      "sessionNotBelongToEvent": "الجلسة لا تنتمي إلى هذا المؤتمر",
+        "selectKnownConference": "اختر مؤتمرًا معروفًا",
+  "otherConference": "مؤتمر آخر",
+  "addConference": "إضافة مؤتمر"
 
 
 }

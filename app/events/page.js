@@ -8,11 +8,20 @@ import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
 import Toast from '../components/Toast';
 
+// معلومات مسبقة عن المؤتمرات المعروفة (لتحسين التجربة)
+const KNOWN_CONFERENCES = {
+  talmzo: { name: 'تلمذو', logo: 'talmzo.png', color: '#0D9488' },
+  kashaf: { name: 'كشاف', logo: 'kashaf.png', color: '#3B82F6' },
+  el7ad: { name: 'الي أقصى الأرض', logo: 'el7ad.png', color: '#DC2626' },
+  al3lam: { name: 'علمتني', logo: 'al3lam.png', color: '#D97706' },
+};
+
 function EventsContent() {
   const t = useTranslation();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newEventName, setNewEventName] = useState('');
+  const [newEventKey, setNewEventKey] = useState(''); // shortCode لتلمذو، كشاف، إلخ
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -35,13 +44,26 @@ function EventsContent() {
     e.preventDefault();
     if (!newEventName.trim()) return;
 
+    let eventData = {
+      name: newEventName.trim(),
+      createdAt: serverTimestamp(),
+    };
+
+    // إذا اخترت مؤتمرًا معروفًا، استخدم بياناته
+    if (newEventKey && KNOWN_CONFERENCES[newEventKey]) {
+      const conf = KNOWN_CONFERENCES[newEventKey];
+      eventData = {
+        ...eventData,
+        logo: conf.logo,
+        color: conf.color,
+      };
+    }
+
     try {
-      await addDoc(collection(db, 'events'), {
-        name: newEventName.trim(),
-        createdAt: serverTimestamp(),
-      });
+      await addDoc(collection(db, 'events'), eventData);
       setNewEventName('');
-      // إعادة تحميل القائمة
+      setNewEventKey('');
+      // إعادة التحميل
       const snapshot = await getDocs(collection(db, 'events'));
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setEvents(list);
@@ -52,9 +74,25 @@ function EventsContent() {
     }
   };
 
+  // وظيفة مساعدة للحصول على بيانات المؤتمرات (حتى لو غير مكتملة)
+  const getConferenceData = (event) => {
+    const base = {
+      name: event.name || 'مؤتمر غير معروف',
+      logo: event.logo || 'default.png',
+      color: event.color || '#6B7280',
+    };
+
+    // لو الـ logo ما بيبدأش بـ http، نعتبره ملفًا محليًا
+    const logoSrc = event.logo?.startsWith('http')
+      ? event.logo
+      : `/logos/${event.logo || 'default.png'}`;
+
+    return { ...base, logoSrc };
+  };
+
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-4xl">
         <div className="text-center mb-10">
           <div className="w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl text-purple-600">🎪</span>
@@ -66,42 +104,75 @@ function EventsContent() {
         {/* إضافة مؤتمر جديد */}
         <div className="bg-white p-5 rounded-2xl shadow border border-gray-100 mb-8">
           <h2 className="font-bold text-dark mb-3">{t('addNewConference')}</h2>
-          <form onSubmit={handleAddEvent} className="flex gap-2">
+          <form onSubmit={handleAddEvent} className="space-y-3">
             <input
               type="text"
               value={newEventName}
               onChange={(e) => setNewEventName(e.target.value)}
               placeholder={t('conferenceName')}
-              className="flex-1 p-2 border border-gray-300 rounded-lg"
+              className="w-full p-2 border border-gray-300 rounded-lg"
+              required
             />
+            <select
+              value={newEventKey}
+              onChange={(e) => setNewEventKey(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-lg"
+            >
+              <option value="">{t('selectKnownConference')}</option>
+              {Object.entries(KNOWN_CONFERENCES).map(([key, conf]) => (
+                <option key={key} value={key}>{conf.name}</option>
+              ))}
+              <option value="custom">{t('otherConference')}</option>
+            </select>
             <button
               type="submit"
-              className="bg-primary text-white px-4 py-2 rounded-lg font-medium"
+              className="w-full bg-primary text-white py-2 rounded-lg font-medium"
             >
-              ➕
+              ➕ {t('addConference')}
             </button>
           </form>
         </div>
 
-        {/* قائمة المؤتمرات */}
-        <div className="space-y-4">
+        {/* شبكة المؤتمرات */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {loading ? (
-            <p className="text-center">{t('loading')}</p>
+            <p className="text-center col-span-full">{t('loading')}</p>
           ) : events.length === 0 ? (
-            <p className="text-center text-gray-500">{t('noConferencesYet')}</p>
+            <p className="text-center col-span-full text-gray-500">{t('noConferencesYet')}</p>
           ) : (
-            events.map(event => (
-              <Link
-                key={event.id}
-                href={`/?eventId=${event.id}`}
-                className="block bg-white p-4 rounded-2xl shadow border border-gray-100 hover:shadow-md transition"
-              >
-                <h3 className="text-xl font-bold text-dark">{event.name}</h3>
-                <p className="text-gray-600 text-sm mt-1">
-                  {t('eventId')}: {event.id}
-                </p>
-              </Link>
-            ))
+            events.map((event) => {
+              const conf = getConferenceData(event);
+              return (
+                <Link
+                  key={event.id}
+                  href={`/?eventId=${event.id}`}
+                  className="block"
+                >
+                  <div
+                    className="rounded-2xl p-6 text-center shadow hover:shadow-lg transition"
+                    style={{
+                      background: `linear-gradient(135deg, ${conf.color}10 0%, ${conf.color}05 100%)`,
+                      borderLeft: `4px solid ${conf.color}`,
+                    }}
+                  >
+                    <div className="w-16 h-16 mx-auto mb-3 flex items-center justify-center">
+                      <img
+                        src={conf.logoSrc}
+                        alt={conf.name}
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          e.currentTarget.src = '/logos/default.png';
+                        }}
+                      />
+                    </div>
+                    <h3 className="text-xl font-bold" style={{ color: conf.color }}>
+                      {conf.name}
+                    </h3>
+                    <p className="text-xs text-gray-600 mt-1">{t('eventId')}: {event.id}</p>
+                  </div>
+                </Link>
+              );
+            })
           )}
         </div>
       </div>

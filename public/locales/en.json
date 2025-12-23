@@ -109,7 +109,10 @@
   "noSessionAvailable": "No session available",
   "noSessionsAvailable": "No sessions available for this conference",
     "forConference": "for conference",
-      "sessionNotBelongToEvent": "Session does not belong to this conference"
+      "sessionNotBelongToEvent": "Session does not belong to this conference",
+        "selectKnownConference": "Select a known conference",
+  "otherConference": "Other Conference",
+  "addConference": "Add Conference"
 
 
 
