@@ -1,7 +1,7 @@
 // app/reports/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -10,7 +10,7 @@ import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
 import Toast from '../components/Toast';
 
-export default function ReportsPage() {
+function ReportsContent() {
   const t = useTranslation();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -114,14 +114,7 @@ export default function ReportsPage() {
   };
 
   if (!eventId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -201,7 +194,6 @@ export default function ReportsPage() {
                       <td className="border-b p-3 text-center">{sess.totalCheckOuts}</td>
                       <td className="border-b p-3 text-center">
                         <Link
-                          // ← تحديث الرابط ليشمل eventId
                           href={`/reports/session/${sess.id}?eventId=${eventId}`}
                           className="text-secondary font-medium hover:underline"
                         >
@@ -224,7 +216,6 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Toast الإشعار */}
       {toast && (
         <Toast
           message={toast.message}
@@ -233,5 +224,20 @@ export default function ReportsPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ReportsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <ReportsContent />
+    </Suspense>
   );
 }

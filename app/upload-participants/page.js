@@ -1,7 +1,7 @@
 // app/upload-participants/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -10,7 +10,7 @@ import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
 import Toast from '../components/Toast';
 
-export default function UploadParticipantsPage() {
+function UploadParticipantsContent() {
   const t = useTranslation();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -87,7 +87,7 @@ export default function UploadParticipantsPage() {
       for (const p of preview) {
         const qrId = 'user_' + Math.random().toString(36).substr(2, 9);
         await addDoc(collection(db, 'participants'), {
-          eventId, // ← إضافة eventId هنا
+          eventId,
           name: p.name,
           team: p.team,
           group: p.group,
@@ -116,7 +116,7 @@ export default function UploadParticipantsPage() {
     try {
       const qrId = 'user_' + Math.random().toString(36).substr(2, 9);
       await addDoc(collection(db, 'participants'), {
-        eventId, // ← إضافة eventId هنا
+        eventId,
         name: manualName.trim(),
         team: manualTeam.trim() || t('notSpecified'),
         group: manualGroup.trim() || t('notSpecified'),
@@ -134,14 +134,7 @@ export default function UploadParticipantsPage() {
   };
 
   if (!eventId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -258,7 +251,6 @@ export default function UploadParticipantsPage() {
         </div>
       </div>
 
-      {/* Toast الإشعار */}
       {toast && (
         <Toast
           message={toast.message}
@@ -267,5 +259,20 @@ export default function UploadParticipantsPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function UploadParticipantsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <UploadParticipantsContent />
+    </Suspense>
   );
 }

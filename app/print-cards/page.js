@@ -1,7 +1,7 @@
 // app/print-cards/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -9,7 +9,7 @@ import { db } from '../../firebase/config';
 import { useTranslation } from '../useTranslation';
 import Link from 'next/link';
 
-export default function PrintCardsPage() {
+function PrintCardsContent() {
   const t = useTranslation();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -29,9 +29,9 @@ export default function PrintCardsPage() {
     const fetchEventAndParticipants = async () => {
       try {
         // تحميل اسم المؤتمر
-        const eventDoc = await getDocs(query(collection(db, 'events'), where('id', '==', eventId)));
-        if (!eventDoc.empty) {
-          setEventName(eventDoc.docs[0].data().name || eventId);
+        const eventSnapshot = await getDocs(query(collection(db, 'events'), where('id', '==', eventId)));
+        if (!eventSnapshot.empty) {
+          setEventName(eventSnapshot.docs[0].data().name || eventId);
         } else {
           setEventName(eventId);
         }
@@ -62,14 +62,7 @@ export default function PrintCardsPage() {
   };
 
   if (!eventId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -200,5 +193,20 @@ export default function PrintCardsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function PrintCardsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <PrintCardsContent />
+    </Suspense>
   );
 }

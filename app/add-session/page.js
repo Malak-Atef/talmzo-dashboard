@@ -1,7 +1,7 @@
 // app/add-session/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslation } from '../useTranslation';
 import { useLanguage } from '../LanguageContext';
@@ -10,7 +10,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import Toast from '../components/Toast';
 import Link from 'next/link';
 
-export default function AddSession() {
+function AddSessionContent() {
   const t = useTranslation();
   const { lang } = useLanguage();
   const searchParams = useSearchParams();
@@ -41,7 +41,7 @@ export default function AddSession() {
 
     try {
       await addDoc(collection(db, 'sessions'), {
-        eventId, // ← إضافة eventId هنا
+        eventId,
         sessionName,
         sessionType,
         attendanceMode,
@@ -63,14 +63,7 @@ export default function AddSession() {
   };
 
   if (!eventId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
-        </div>
-      </div>
-    );
+    return null; // سيتم توجيهه بواسطة useEffect
   }
 
   return (
@@ -173,7 +166,6 @@ export default function AddSession() {
         </div>
       </div>
 
-      {/* Toast الإشعار */}
       {toast && (
         <Toast
           message={toast.message}
@@ -182,5 +174,20 @@ export default function AddSession() {
         />
       )}
     </div>
+  );
+}
+
+export default function AddSessionPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <AddSessionContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 // app/sessions/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
 import Toast from '../components/Toast';
 
-export default function SessionsPage() {
+function SessionsContent() {
   const t = useTranslation();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -31,7 +31,6 @@ export default function SessionsPage() {
 
     const fetchSessions = async () => {
       try {
-        // ← إضافة شرط eventId
         const q = query(
           collection(db, 'sessions'),
           where('eventId', '==', eventId),
@@ -59,14 +58,7 @@ export default function SessionsPage() {
   };
 
   if (!eventId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-          <p className="mt-4 text-gray-600">جاري التوجيه...</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -129,7 +121,6 @@ export default function SessionsPage() {
                     )}
                   </div>
                   <Link
-                    // ← تمرير eventId و sessionId معًا
                     href={`/admin-scan?eventId=${eventId}&sessionId=${session.id}`}
                     className="btn-primary px-4 py-2"
                   >
@@ -152,7 +143,6 @@ export default function SessionsPage() {
         </div>
       </div>
 
-      {/* Toast الإشعار */}
       {toast && (
         <Toast
           message={toast.message}
@@ -161,5 +151,20 @@ export default function SessionsPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function SessionsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <SessionsContent />
+    </Suspense>
   );
 }
