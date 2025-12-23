@@ -24,34 +24,56 @@ function AdminScanContent() {
   const searchParams = useSearchParams();
   const sessionIdFromUrl = searchParams.get('sessionId');
 
-  const [sessions, setSessions] = useState([]);
-  const [selectedSession, setSelectedSession] = useState(null);
+  // ✅ حالة مستقرة: id الجلسة المطلوبة (من الرابط أو null)
+  const [targetSessionId] = useState(sessionIdFromUrl || null);
+  const [sessionData, setSessionData] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [toast, setToast] = useState(null);
 
   const scanner = useRef(null);
 
-  // تحميل جلسة واحدة (إذا وُجد sessionId) أو جميع الجلسات (إذا لم يُوجد)
+  // ✅ تحميل الجلسة + المشاركين في مرة واحدة
   useEffect(() => {
-    const loadSessionOrSessions = async () => {
-      if (sessionIdFromUrl) {
-        try {
-          const sessionDoc = await getDoc(doc(db, 'sessions', sessionIdFromUrl));
-          if (sessionDoc.exists()) {
-            setSelectedSession({ id: sessionDoc.id, ...sessionDoc.data() });
-          } else {
-            setToast({ message: t('sessionNotFound'), type: 'error' });
-          }
-        } catch (err) {
-          console.error('Error loading session:', err);
-          setToast({ message: t('failedToLoadSessions'), type: 'error' });
-        } finally {
+    const loadData = async () => {
+      if (!targetSessionId) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // تحميل بيانات الجلسة
+        const sessionDoc = await getDoc(doc(db, 'sessions', targetSessionId));
+        if (!sessionDoc.exists()) {
+          setToast({ message: t('sessionNotFound'), type: 'error' });
           setLoading(false);
+          return;
         }
-      } else {
+        const session = { id: sessionDoc.id, ...sessionDoc.data() };
+        setSessionData(session);
+
+        // تحميل جميع المشاركين (لا نحتاج تصفية هنا)
+        const q = query(collection(db, 'participants'));
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setParticipants(list);
+      } catch (err) {
+        console.error('Error loading session or participants:', err);
+        setToast({ message: t('failedToLoadSessions'), type: 'error' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [targetSessionId, t]);
+
+  // تحميل قائمة الجلسات (فقط لو دخلت من /admin-scan بدون sessionId)
+  const [sessions, setSessions] = useState([]);
+  useEffect(() => {
+    if (targetSessionId === null) {
+      const loadSessions = async () => {
         try {
           const q = query(collection(db, 'sessions'));
           const snapshot = await getDocs(q);
@@ -60,45 +82,15 @@ function AdminScanContent() {
         } catch (err) {
           console.error('Error loading sessions:', err);
           setToast({ message: t('failedToLoadSessions'), type: 'error' });
-        } finally {
-          setLoading(false);
         }
-      }
-    };
+      };
+      loadSessions();
+    }
+  }, [targetSessionId]);
 
-    loadSessionOrSessions();
-  }, [sessionIdFromUrl, t]);
-
-  // جلب المشاركين عند تحديد الجلسة
-// جلب المشاركين دائمًا عند تحديد الجلسة (حتى لو وصلنا من رابط)
-// جلب المشاركين فقط إذا تم تحديد الجلسة
-useEffect(() => {
-  if (selectedSession) {
-    setLoadingParticipants(true); // ← نبدأ التحميل
-    const fetchParticipants = async () => {
-      try {
-        const q = query(collection(db, 'participants'));
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setParticipants(list);
-      } catch (err) {
-        console.error('Error loading participants:', err);
-        setToast({ message: t('failedToLoadParticipants'), type: 'error' });
-        setParticipants([]); // حتى لو فشل، نخليها فاضية مش undefined
-      } finally {
-        setLoadingParticipants(false); // ← نوقف التحميل في النهاية دائمًا
-      }
-    };
-    fetchParticipants();
-  } else {
-    // لو ما فيش جلسة، نخلي القائمة فاضية ونوقف التحميل
-    setParticipants([]);
-    setLoadingParticipants(false);
-  }
-}, [selectedSession, t]);
-  // بدء المسح
+  // بدء المسح بالكاميرا
   const startScanner = async () => {
-    if (!selectedSession) {
+    if (!sessionData) {
       setToast({ message: t('selectSessionFirst'), type: 'error' });
       return;
     }
@@ -153,7 +145,7 @@ useEffect(() => {
   };
 
   const saveAttendance = async (userId, displayNameFallback = null) => {
-    if (!selectedSession || !userId) return;
+    if (!sessionData || !userId) return;
 
     let displayName = displayNameFallback || userId;
     try {
@@ -172,7 +164,7 @@ useEffect(() => {
     try {
       const attendanceQuery = query(
         collection(db, 'attendance'),
-        where('sessionId', '==', selectedSession.id),
+        where('sessionId', '==', sessionData.id),
         where('userId', '==', userId)
       );
       const snapshot = await getDocs(attendanceQuery);
@@ -183,7 +175,7 @@ useEffect(() => {
       const actionText = action === 'check-in' ? t('checkIn') : t('checkOut');
 
       await addDoc(collection(db, 'attendance'), {
-        sessionId: selectedSession.id,
+        sessionId: sessionData.id,
         userId: userId,
         action: action,
         timestamp: serverTimestamp(),
@@ -214,88 +206,87 @@ useEffect(() => {
             <div className="inline-block h-6 w-6 animate-spin rounded-full border-3 border-primary border-t-transparent"></div>
             <p className="mt-3 text-gray-600">{t('loadingSessions')}</p>
           </div>
-        ) : (
+        ) : sessionData ? (
+          // عرض الكاميرا + القائمة اليدوية
           <>
-            {!sessionIdFromUrl && (
-              <div>
-                <label className="block font-semibold text-dark mb-2">
-                  {t('selectSession')}
-                </label>
-                <select
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                  value={selectedSession?.id || ''}
-                  onChange={(e) => {
-                    const sess = sessions.find((s) => s.id === e.target.value);
-                    setSelectedSession(sess);
-                  }}
-                >
-                  <option value="">{t('selectSessionPlaceholder')}</option>
-                  {sessions.map((sess) => (
-                    <option key={sess.id} value={sess.id}>
-                      {sess.sessionName}
-                    </option>
-                  ))}
-                </select>
+            {/* الكاميرا */}
+            <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
+              <h3 className="font-bold text-dark mb-3">{t('scanQR')}</h3>
+              <div className="relative bg-gray-900 rounded-xl overflow-hidden h-64">
+                <div id="qr-reader" className="w-full h-full"></div>
+                {!isScanning && (
+                  <button
+                    onClick={startScanner}
+                    className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-5 py-2 rounded-lg font-medium z-10"
+                  >
+                    📷 {t('openCamera')}
+                  </button>
+                )}
               </div>
-            )}
+            </div>
 
-            {selectedSession && (
-              <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
-                <h3 className="font-bold text-dark mb-3">{t('scanQR')}</h3>
-                <div className="relative bg-gray-900 rounded-xl overflow-hidden h-64">
-                  <div id="qr-reader" className="w-full h-full"></div>
-                  {!isScanning && (
-                    <button
-                      onClick={startScanner}
-                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-5 py-2 rounded-lg font-medium z-10"
+            {/* القائمة اليدوية */}
+            <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
+              <h3 className="font-bold text-dark mb-3">
+                {t('selectParticipantManually')}
+              </h3>
+              {participants.length > 0 ? (
+                <div className="max-h-60 overflow-y-auto space-y-2">
+                  {participants.map((p) => (
+                    <div
+                      key={p.qrId}
+                      className="flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
                     >
-                      📷 {t('openCamera')}
-                    </button>
-                  )}
+                      <span>{p.name}</span>
+                      <button
+                        onClick={() => handleManualCheckIn(p.qrId, p.name)}
+                        className="btn-primary px-3 py-1 text-sm"
+                      >
+                        {t('checkIn')}
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            )}
-
-{/* القائمة اليدوية */}
-{selectedSession && (
-  <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
-    <h3 className="font-bold text-dark mb-3">
-      {t('selectParticipantManually')}
-    </h3>
-    {loadingParticipants ? (
-      <p className="text-center text-gray-500">{t('loadingParticipants')}</p>
-    ) : participants.length === 0 ? (
-      <p className="text-center text-gray-500">{t('noParticipants')}</p>
-    ) : (
-      <div className="max-h-60 overflow-y-auto space-y-2">
-        {participants.map((p) => (
-          <div
-            key={p.qrId}
-            className="flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
-          >
-            <span>{p.name}</span>
-            <button
-              onClick={() => handleManualCheckIn(p.qrId, p.name)}
-              className="btn-primary px-3 py-1 text-sm"
-            >
-              {t('checkIn')}
-            </button>
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-)}
-            <div className="text-center">
-              <Link
-                href="/"
-                className="text-secondary font-medium hover:underline flex items-center justify-center gap-1"
-              >
-                ← {t('backToHome')}
-              </Link>
+              ) : (
+                <p className="text-center text-gray-500">{t('noParticipants')}</p>
+              )}
             </div>
           </>
-        )}
+        ) : targetSessionId === null ? (
+          // عرض قائمة الجلسات فقط لو دخلت من الرابط المباشر
+          <div>
+            <label className="block font-semibold text-dark mb-2">
+              {t('selectSession')}
+            </label>
+            <select
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              value={sessions.length > 0 && sessions[0]?.id ? sessions[0].id : ''}
+              onChange={(e) => {
+                const sess = sessions.find((s) => s.id === e.target.value);
+                if (sess) {
+                  // تغيير الرابط لتضمين sessionId (لتحسين الاستخدام)
+                  window.location.href = `/admin-scan?sessionId=${sess.id}`;
+                }
+              }}
+            >
+              <option value="">{t('selectSessionPlaceholder')}</option>
+              {sessions.map((sess) => (
+                <option key={sess.id} value={sess.id}>
+                  {sess.sessionName}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
+        <div className="text-center">
+          <Link
+            href="/"
+            className="text-secondary font-medium hover:underline flex items-center justify-center gap-1"
+          >
+            ← {t('backToHome')}
+          </Link>
+        </div>
       </div>
 
       {toast && (
