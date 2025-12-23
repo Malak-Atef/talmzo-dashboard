@@ -1,14 +1,14 @@
 // app/events/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
 import Toast from '../components/Toast';
 
-export default function EventsPage() {
+function EventsContent() {
   const t = useTranslation();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +93,7 @@ export default function EventsPage() {
             events.map(event => (
               <Link
                 key={event.id}
-                href={`/?eventId=${event.id}`} // نعود للرئيسية مع eventId
+                href={`/?eventId=${event.id}`}
                 className="block bg-white p-4 rounded-2xl shadow border border-gray-100 hover:shadow-md transition"
               >
                 <h3 className="text-xl font-bold text-dark">{event.name}</h3>
@@ -114,5 +114,20 @@ export default function EventsPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function EventsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <EventsContent />
+    </Suspense>
   );
 }
