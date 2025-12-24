@@ -1,5 +1,5 @@
 // app/layout.js
-// لا تضع 'use client' هنا ← هذا ملف Server Component
+// بدون 'use client' ← Server Component
 
 import { LanguageProvider } from './LanguageContext';
 import './globals.css';

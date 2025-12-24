@@ -5,32 +5,35 @@ import { createContext, useContext, useState, useEffect } from 'react';
 
 const LanguageContext = createContext();
 
+// دالة مساعدة لتحميل اللغة من localStorage (آمنة للخادم)
+function getInitialLanguage() {
+  if (typeof window === 'undefined') {
+    return 'ar'; // افتراضي في الخادم
+  }
+  const saved = localStorage.getItem('talmzo-lang');
+  const browserLang = navigator.language.startsWith('ar') ? 'ar' : 'en';
+  return saved || browserLang;
+}
+
 export function LanguageProvider({ children }) {
-  const [lang, setLang] = useState(null); // ← null للخادم
+  // استخدام دالة مهيّئة لتجنب setState في useEffect
+  const [lang, setLang] = useState(getInitialLanguage);
 
   useEffect(() => {
-    // هذا يُنفَّذ فقط في العميل
-    const saved = localStorage.getItem('talmzo-lang');
-    const browserLang = navigator.language.startsWith('ar') ? 'ar' : 'en';
-    const finalLang = saved || browserLang;
-    setLang(finalLang);
-    document.documentElement.dir = finalLang === 'ar' ? 'rtl' : 'ltr';
-    document.documentElement.lang = finalLang;
-  }, []);
+    // تطبيق الإعدادات بعد التحميل الأولي
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = lang;
+
+    // حفظ في localStorage عند التغيير
+    localStorage.setItem('talmzo-lang', lang);
+  }, [lang]);
 
   const toggleLanguage = () => {
-    const newLang = lang === 'ar' ? 'en' : 'ar';
-    setLang(newLang);
-    localStorage.setItem('talmzo-lang', newLang);
-    document.documentElement.dir = newLang === 'ar' ? 'rtl' : 'ltr';
-    document.documentElement.lang = newLang;
+    setLang(prev => prev === 'ar' ? 'en' : 'ar');
   };
 
-  // إذا كانت اللغة غير معرّفة بعد (في الخادم)، استخدم 'ar' مؤقتًا
-  const currentLang = lang || 'ar';
-
   return (
-    <LanguageContext.Provider value={{ lang: currentLang, toggleLanguage }}>
+    <LanguageContext.Provider value={{ lang, toggleLanguage }}>
       {children}
     </LanguageContext.Provider>
   );
