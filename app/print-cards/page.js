@@ -196,13 +196,13 @@ function PrintCardsContent() {
 
                 {/* QR Code على اليمين */}
                 <div className="flex-shrink-0">
-                  <QRCode
-                    size={80}
-                    value={p.qrId}
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                    style={{ height: '80px', width: '80px' }}
-                  />
+                <QRCode
+                  size={120}
+                  value={p.qrId}
+                  bgColor="#ffffff"
+                  fgColor="#000000"
+                  style={{ width: "120px", height: "250px" }} // ← نفس العرض والارتفاع
+                />
                 </div>
               </div>
             ))}

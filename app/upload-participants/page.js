@@ -97,7 +97,14 @@ function UploadParticipantsContent() {
 
     try {
       for (const p of preview) {
-        const qrId = 'user_' + Math.random().toString(36).substr(2, 9);
+        const docRef = await addDoc(collection(db, 'participants'), {
+          eventId,
+          name: p.name,
+          team: p.team,
+          group: p.group,
+          createdAt: serverTimestamp(),
+        });
+        const qrId = `user_${docRef.id}`;
         await addDoc(collection(db, 'participants'), {
           eventId,
           name: p.name,

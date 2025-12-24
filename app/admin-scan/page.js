@@ -239,6 +239,16 @@ function AdminScanContent() {
       const actionText = action === 'check-in' ? t('checkIn') : t('checkOut');
       setToast({ message: `${actionText} — ${displayName}`, type: 'success' });
 
+      // ⭐️ إعادة تحميل سجلات الحضور بعد التسجيل
+      const attendanceQ = query(
+        collection(db, 'attendance'),
+        where('eventId', '==', activeSession.eventId),
+        where('sessionId', '==', activeSession.id)
+      );
+      const attendanceSnap = await getDocs(attendanceQ);
+      const attendanceList = attendanceSnap.docs.map(doc => doc.data());
+      setAttendanceRecords(attendanceList);
+
     } catch (err) {
       console.error('Error saving attendance:', err);
       setToast({ message: t('failedToSaveAttendance'), type: 'error' });
