@@ -197,63 +197,80 @@ function AdminScanContent() {
   }, []);
 
   // حفظ الحضور
-  const saveAttendance = async (userId, actionOverride = null) => {
-    const activeSession = sessionData || sessionsList[0];
-    if (!eventId || !activeSession) {
-      setToast({ message: t('missingEventOrSession'), type: 'error' });
-      return;
+const saveAttendance = async (userId, actionOverride = null) => {
+  const activeSession = sessionData || sessionsList[0];
+  if (!eventId || !activeSession) {
+    setToast({ message: t('missingEventOrSession'), type: 'error' });
+    return;
+  }
+
+  try {
+    const userQuery = query(collection(db, 'participants'), where('qrId', '==', userId));
+    const userSnapshot = await getDocs(userQuery);
+    let displayName = userId;
+    let userObj = null;
+    if (!userSnapshot.empty) {
+      const data = userSnapshot.docs[0].data();
+      userObj = { qrId: userId, ...data };
+      displayName = `${data.name} (${data.team || t('notSpecified')} - ${data.group || t('notSpecified')})`;
     }
 
-    try {
-      const userQuery = query(collection(db, 'participants'), where('qrId', '==', userId));
-      const userSnapshot = await getDocs(userQuery);
-      let displayName = userId;
-      if (!userSnapshot.empty) {
-        const data = userSnapshot.docs[0].data();
-        displayName = `${data.name} (${data.team || t('notSpecified')} - ${data.group || t('notSpecified')})`;
-      }
-
-      // تحديد الإجراء
-      let action = actionOverride;
-      if (!action) {
-        const userRecords = attendanceRecords.filter(rec => rec.userId === userId);
-        const lastRecord = userRecords.length > 0 ? userRecords[userRecords.length - 1] : null;
-        action = lastRecord?.action === 'check-in' ? 'check-out' : 'check-in';
-      }
-
-      // حفظ السجل
-      const newRecord = {
-        eventId,
-        sessionId: activeSession.id,
-        userId,
-        userName: displayName,
-        action,
-        timestamp: serverTimestamp(),
-      };
-
-      await addDoc(collection(db, 'attendance'), newRecord);
-
-      // إضافة السجل الجديد إلى القائمة
-      setAttendanceRecords(prev => [...prev, newRecord]);
-
-      const actionText = action === 'check-in' ? t('checkIn') : t('checkOut');
-      setToast({ message: `${actionText} — ${displayName}`, type: 'success' });
-
-      // ⭐️ إعادة تحميل سجلات الحضور بعد التسجيل
-      const attendanceQ = query(
-        collection(db, 'attendance'),
-        where('eventId', '==', activeSession.eventId),
-        where('sessionId', '==', activeSession.id)
-      );
-      const attendanceSnap = await getDocs(attendanceQ);
-      const attendanceList = attendanceSnap.docs.map(doc => doc.data());
-      setAttendanceRecords(attendanceList);
-
-    } catch (err) {
-      console.error('Error saving attendance:', err);
-      setToast({ message: t('failedToSaveAttendance'), type: 'error' });
+    // تحديد الإجراء
+    let action = actionOverride;
+    if (!action) {
+      const userRecords = attendanceRecords.filter(rec => rec.userId === userId);
+      const lastRecord = userRecords.length > 0 ? userRecords[userRecords.length - 1] : null;
+      action = lastRecord?.action === 'check-in' ? 'check-out' : 'check-in';
     }
-  };
+
+    // حفظ السجل
+    const newRecord = {
+      eventId,
+      sessionId: activeSession.id,
+      userId,
+      userName: displayName,
+      action,
+      timestamp: serverTimestamp(),
+    };
+
+    await addDoc(collection(db, 'attendance'), newRecord);
+    console.log('✅ Attendance saved to Firestore:', newRecord);
+
+    // ✅ اهتزاز فوري
+    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(200);
+    }
+
+    // ✅ تحديث السجلات
+    setAttendanceRecords(prev => [...prev, newRecord]);
+
+    // ✅ تحديث قوائم الحاضرين والغائبين فورًا
+    if (action === 'check-in' && userObj) {
+      setPresentUsers(prev => {
+        if (!prev.some(u => u.qrId === userId)) {
+          return [...prev, userObj];
+        }
+        return prev;
+      });
+      setAbsentUsers(prev => prev.filter(u => u.qrId !== userId));
+    } else if (action === 'check-out' && userObj) {
+      setPresentUsers(prev => prev.filter(u => u.qrId !== userId));
+      setAbsentUsers(prev => {
+        if (!prev.some(u => u.qrId === userId)) {
+          return [...prev, userObj];
+        }
+        return prev;
+      });
+    }
+
+    const actionText = action === 'check-in' ? t('checkIn') : t('checkOut');
+    setToast({ message: `${actionText} — ${displayName}`, type: 'success' });
+
+  } catch (err) {
+    console.error('Error saving attendance:', err);
+    setToast({ message: t('failedToSaveAttendance'), type: 'error' });
+  }
+};
 
   // خروج جماعي
   const handleBulkCheckOut = async () => {
