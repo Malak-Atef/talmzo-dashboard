@@ -6,9 +6,10 @@ import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore
 import { db } from '../../firebase/config';
 import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
+import { useLanguage } from '../LanguageContext'; // ← أضف هذا الاستيراد
 import Toast from '../components/Toast';
 
-// معلومات مسبقة عن المؤتمرات المعروفة (لتحسين التجربة)
+// معلومات مسبقة عن المؤتمرات المعروفة
 const KNOWN_CONFERENCES = {
   talmzo: { name: 'تلمذو', logo: 'talmzo.png', color: '#0D9488' },
   kashaf: { name: 'كشاف', logo: 'kashaf.png', color: '#3B82F6' },
@@ -18,10 +19,12 @@ const KNOWN_CONFERENCES = {
 
 function EventsContent() {
   const t = useTranslation();
+  const { lang, toggleLanguage } = useLanguage(); // ← استخدم اللغة
+
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newEventName, setNewEventName] = useState('');
-  const [newEventKey, setNewEventKey] = useState(''); // shortCode لتلمذو، كشاف، إلخ
+  const [newEventKey, setNewEventKey] = useState('');
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -49,7 +52,6 @@ function EventsContent() {
       createdAt: serverTimestamp(),
     };
 
-    // إذا اخترت مؤتمرًا معروفًا، استخدم بياناته
     if (newEventKey && KNOWN_CONFERENCES[newEventKey]) {
       const conf = KNOWN_CONFERENCES[newEventKey];
       eventData = {
@@ -63,7 +65,6 @@ function EventsContent() {
       await addDoc(collection(db, 'events'), eventData);
       setNewEventName('');
       setNewEventKey('');
-      // إعادة التحميل
       const snapshot = await getDocs(collection(db, 'events'));
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setEvents(list);
@@ -74,24 +75,31 @@ function EventsContent() {
     }
   };
 
-  // وظيفة مساعدة للحصول على بيانات المؤتمرات (حتى لو غير مكتملة)
   const getConferenceData = (event) => {
     const base = {
       name: event.name || 'مؤتمر غير معروف',
       logo: event.logo || 'default.png',
       color: event.color || '#6B7280',
     };
-
-    // لو الـ logo ما بيبدأش بـ http، نعتبره ملفًا محليًا
     const logoSrc = event.logo?.startsWith('http')
       ? event.logo
       : `/logos/${event.logo || 'default.png'}`;
-
     return { ...base, logoSrc };
   };
 
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
+      {/* ✅ زر تبديل اللغة في الأعلى */}
+      <div className="self-end w-full max-w-4xl mb-6">
+        <button
+          onClick={toggleLanguage}
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-full text-sm font-medium shadow-sm"
+          aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
+        >
+          {lang === 'ar' ? 'English' : 'العربية'}
+        </button>
+      </div>
+
       <div className="w-full max-w-4xl">
         <div className="text-center mb-10">
           <div className="w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-4">
@@ -168,7 +176,6 @@ function EventsContent() {
                     <h3 className="text-xl font-bold" style={{ color: conf.color }}>
                       {conf.name}
                     </h3>
-                    <p className="text-xs text-gray-600 mt-1">{t('eventId')}: {event.id}</p>
                   </div>
                 </Link>
               );

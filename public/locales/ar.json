@@ -1,5 +1,5 @@
 {
-  "appName": "تلمذو",
+  "appName": "تلمذوا",
   "dashboard": "لوحة التحكم",
   "addSession": "إضافة جلسة",
   "sessions": "الجلسات",
@@ -48,7 +48,7 @@
   "totalCheckOuts": "إجمالي الخروج",
   "sessionSummary": "ملخص الجلسات",
   "attendanceDetails": "تفاصيل الحضور",
-  "reportFileName": "تقرير_تلمذو.xlsx",
+  "reportFileName": "تقرير_تلمذوا.xlsx",
   "failedToLoadSessions": "فشل تحميل الجلسات",
   "notSpecified": "غير محدد",
   "noValidData": "لا توجد بيانات صالحة",
@@ -126,7 +126,24 @@
       "sessionNotBelongToEvent": "الجلسة لا تنتمي إلى هذا المؤتمر",
         "selectKnownConference": "اختر مؤتمرًا معروفًا",
   "otherConference": "مؤتمر آخر",
-  "addConference": "إضافة مؤتمر"
+  "addConference": "إضافة مؤتمر",
+  "unknownEvent": "مؤتمر غير معروف",
+  "unknownSession": "جلسة غير معروفة",
+    "smartAttendanceControl": "لوحة تحكم ذكية لتسجيل الحضور",
+  "presentNow": "الحاضرون الآن",
+  "absentNow": "الغائبون الآن",
+  "noOnePresent": "لا يوجد أحد حاضر",
+  "everyonePresent": "الجميع حاضرون",
+  "bulkCheckOut": "خروج جماعي",
+  "bulkCheckIn": "دخول جماعي",
+  "confirmBulkCheckOut": "هل أنت متأكد من خروج جميع الحاضرين؟",
+  "bulkCheckOutSuccess": "تم تسجيل خروج الجميع بنجاح",
+  "bulkCheckOutFailed": "فشل تسجيل الخروج الجماعي",
+  "bulkCheckInSuccess": "تم تسجيل دخول {n} مشارك بنجاح",
+  "bulkCheckInFailed": "فشل تسجيل الدخول الجماعي",
+  "selectParticipantsToCheckIn": "يرجى اختيار مشاركين للتسجيل",
+  "noOneToCheckOut": "لا يوجد أحد للخروج"
+
 
 
 }

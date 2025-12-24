@@ -3,10 +3,9 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import * as XLSX from 'xlsx';
-import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
 import Toast from '../components/Toast';
 
@@ -19,17 +18,23 @@ function ReportsContent() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+  const [eventData, setEventData] = useState(null);
 
-  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
   useEffect(() => {
     if (!eventId) {
       router.push('/events');
       return;
     }
 
-    const fetchAllData = async () => {
+    const loadData = async () => {
       try {
-        // تحميل الجلسات الخاصة بالمؤتمر
+        // تحميل بيانات المؤتمر
+        const eventDoc = await getDoc(doc(db, 'events', eventId));
+        if (eventDoc.exists()) {
+          setEventData({ id: eventDoc.id, ...eventDoc.data() });
+        }
+
+        // تحميل الجلسات
         const sessionsSnapshot = await getDocs(
           query(
             collection(db, 'sessions'),
@@ -39,7 +44,7 @@ function ReportsContent() {
         );
         const sessionsList = sessionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // تحميل سجلات الحضور الخاصة بالمؤتمر
+        // تحميل الحضور
         const attendanceSnapshot = await getDocs(
           query(
             collection(db, 'attendance'),
@@ -48,7 +53,7 @@ function ReportsContent() {
         );
         const attendanceList = attendanceSnapshot.docs.map(doc => doc.data());
 
-        // تحسين بيانات الجلسات
+        // دمج البيانات
         const enrichedSessions = sessionsList.map(sess => {
           const sessionAttendance = attendanceList.filter(a => a.sessionId === sess.id);
           const uniqueUsers = [...new Set(sessionAttendance.map(a => a.userId))];
@@ -67,14 +72,14 @@ function ReportsContent() {
         setSessions(enrichedSessions);
       } catch (error) {
         console.error('Error loading reports:', error);
-        setToast({ message: t('failedToLoadReports') || 'فشل تحميل التقارير', type: 'error' });
+        setToast({ message: t('failedToLoadReports'), type: 'error' });
       } finally {
         setLoading(false);
       }
     };
 
-    fetchAllData();
-  }, [eventId, t, router]);
+    loadData();
+  }, [eventId]);
 
   const exportToExcel = () => {
     try {
@@ -120,21 +125,23 @@ function ReportsContent() {
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-6xl">
-        {/* رأس الصفحة */}
-        <div className="text-end mb-4">
-          <Link
-            href={`/?eventId=${eventId}`}
-            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+        {/* رأس الصفحة — زر رجوع احترافي */}
+        <div className="flex justify-between items-center mb-6">
+          <button
+            onClick={() => router.push(`/?eventId=${eventId}`)}
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 text-sm font-medium flex items-center gap-1"
           >
             ← {t('backToDashboard')}
-          </Link>
+          </button>
         </div>
 
         <div className="text-center mb-10">
           <div className="w-14 h-14 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl text-green-600">📊</span>
           </div>
-          <h1 className="text-3xl font-bold text-dark">{t('reports')}</h1>
+          <h1 className="text-3xl font-bold text-dark">
+            {t('reports')} — {eventData?.name || t('unknownEvent')}
+          </h1>
           <p className="text-gray-600 mt-2">{t('viewAttendanceStatistics')}</p>
         </div>
 
@@ -162,9 +169,12 @@ function ReportsContent() {
         ) : sessions.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-2xl shadow border border-gray-100">
             <p className="text-gray-600 text-lg mb-4">{t('noReports')}</p>
-            <Link href={`/add-session?eventId=${eventId}`} className="btn-primary px-6 py-2">
-              {t('addSession')}
-            </Link>
+            <button
+              onClick={() => router.push(`/add-session?eventId=${eventId}`)}
+              className="btn-primary px-6 py-2"
+            >
+              ➕ {t('addSession')}
+            </button>
           </div>
         ) : (
           <div className="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
@@ -193,12 +203,13 @@ function ReportsContent() {
                       <td className="border-b p-3 text-center">{sess.totalCheckIns}</td>
                       <td className="border-b p-3 text-center">{sess.totalCheckOuts}</td>
                       <td className="border-b p-3 text-center">
-                        <Link
-                          href={`/reports/session/${sess.id}?eventId=${eventId}`}
-                          className="text-secondary font-medium hover:underline"
+                        <button
+                          onClick={() => router.push(`/reports/session/${sess.id}?eventId=${eventId}`)}
+                          className="text-secondary hover:text-primary transition flex items-center justify-center mx-auto w-8 h-8 rounded-full hover:bg-secondary/10"
+                          title={t('details')}
                         >
-                          {t('details')}
-                        </Link>
+                          👁️
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -208,11 +219,14 @@ function ReportsContent() {
           </div>
         )}
 
-        {/* رجوع للرئيسية */}
+        {/* زر رجوع في الأسفل — احترافي */}
         <div className="mt-8 text-center">
-          <Link href={`/?eventId=${eventId}`} className="text-gray-600 hover:text-gray-900 font-medium flex items-center justify-center gap-1">
+          <button
+            onClick={() => router.push(`/?eventId=${eventId}`)}
+            className="text-gray-600 hover:text-gray-900 font-medium flex items-center justify-center gap-1 mx-auto px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+          >
             ← {t('backToDashboard')}
-          </Link>
+          </button>
         </div>
       </div>
 

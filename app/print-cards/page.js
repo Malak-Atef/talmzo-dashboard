@@ -4,7 +4,7 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useTranslation } from '../useTranslation';
 import Link from 'next/link';
@@ -17,9 +17,8 @@ function PrintCardsContent() {
 
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [eventName, setEventName] = useState('');
+  const [eventData, setEventData] = useState(null);
 
-  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
   useEffect(() => {
     if (!eventId) {
       router.push('/events');
@@ -28,12 +27,12 @@ function PrintCardsContent() {
 
     const fetchEventAndParticipants = async () => {
       try {
-        // تحميل اسم المؤتمر
-        const eventSnapshot = await getDocs(query(collection(db, 'events'), where('id', '==', eventId)));
-        if (!eventSnapshot.empty) {
-          setEventName(eventSnapshot.docs[0].data().name || eventId);
+        // تحميل بيانات المؤتمر مباشرة باستخدام eventId كـ معرف
+        const eventDoc = await getDoc(doc(db, 'events', eventId));
+        if (eventDoc.exists()) {
+          setEventData({ id: eventDoc.id, ...eventDoc.data() });
         } else {
-          setEventName(eventId);
+          setEventData(null);
         }
 
         // تحميل المشاركين التابعين لهذا المؤتمر
@@ -48,7 +47,7 @@ function PrintCardsContent() {
         }));
         setParticipants(list);
       } catch (err) {
-        console.error('Error loading participants:', err);
+        console.error('Error loading participants or event:', err);
       } finally {
         setLoading(false);
       }
@@ -75,6 +74,7 @@ function PrintCardsContent() {
             margin: 0; 
             padding: 0; 
             background: white !important;
+            font-family: 'Tajawal', sans-serif;
           }
           .print-card { 
             break-inside: avoid; 
@@ -82,8 +82,11 @@ function PrintCardsContent() {
           }
         }
         @page { 
-          size: A4; 
+          size: A4 landscape;
           margin: 10mm; 
+        }
+        body {
+          font-family: 'Tajawal', sans-serif;
         }
       `}</style>
 
@@ -101,10 +104,12 @@ function PrintCardsContent() {
         <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
           <span className="text-2xl text-primary">🖨️</span>
         </div>
-        <h1 className="text-3xl font-bold text-dark mb-2">{t('printCards')}</h1>
-        {eventName && (
+        <h1 className="text-3xl font-bold text-dark">
+          {t('printCards')} — {eventData?.name || t('unknownEvent')}
+        </h1>
+        {eventData?.name && (
           <p className="text-gray-600 max-w-2xl mx-auto">
-            {t('forConference')}: <strong>{eventName}</strong>
+            {t('forConference')}: <strong>{eventData.name}</strong>
           </p>
         )}
         <div className="mt-6 flex justify-center gap-3 flex-wrap">
@@ -141,52 +146,64 @@ function PrintCardsContent() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-4">
             {participants.map((p) => (
               <div
                 key={p.id}
-                className="print-card border border-gray-200 rounded-xl p-4 text-center bg-white shadow-sm"
+                className="print-card bg-white border border-gray-300 rounded-lg p-3 shadow-sm"
                 style={{
-                  width: '200px',
-                  height: '280px',
-                  margin: '0 auto',
+                  width: '320px',
+                  height: '180px',
                   display: 'flex',
-                  flexDirection: 'column',
+                  alignItems: 'center',
                   justifyContent: 'space-between',
+                  direction: 'ltr',
                 }}
               >
-                {/* شعار Talmzo */}
-                <div className="flex justify-center">
+                {/* الشعار على اليسار */}
+                <div className="flex-shrink-0">
                   <img
                     src="/talmzo-logo.png"
                     alt="Talmzo"
-                    className="h-8 object-contain"
+                    className="h-12 object-contain"
                   />
                 </div>
 
-                {/* الاسم */}
-                <div className="mt-2">
-                  <h2 className="font-bold text-lg text-dark">{p.name}</h2>
-                  {p.team && (
-                    <p className="text-sm text-gray-600 mt-1">
-                      {p.team}{p.group ? ` • ${p.group}` : ''}
-                    </p>
-                  )}
+                {/* المعلومات المركزية */}
+                <div className="flex-1 text-center px-3">
+                  <h2
+                    className="font-bold text-dark mb-1"
+                    style={{ fontFamily: 'Tajawal, sans-serif', fontSize: '18px' }}
+                  >
+                    {p.name}
+                  </h2>
+                  <div
+                    className="text-left text-gray-700"
+                    style={{ fontFamily: 'Tajawal, sans-serif', fontSize: '14px' }}
+                  >
+                    {p.team && (
+                      <div>
+                        <span className="font-semibold">فرقة:</span> {p.team}
+                      </div>
+                    )}
+                    {p.group && (
+                      <div>
+                        <span className="font-semibold">مجموعة:</span> {p.group}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {/* QR Code */}
-                <div className="flex justify-center">
+                {/* QR Code على اليمين */}
+                <div className="flex-shrink-0">
                   <QRCode
-                    size={100}
+                    size={80}
                     value={p.qrId}
                     bgColor="#ffffff"
                     fgColor="#000000"
-                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                    style={{ height: '80px', width: '80px' }}
                   />
                 </div>
-
-                {/* معرف QR (صغير) */}
-                <div className="text-xs text-gray-500 mt-1 font-mono">{p.qrId}</div>
               </div>
             ))}
           </div>

@@ -13,42 +13,59 @@ import {
   getDoc,
 } from 'firebase/firestore';
 import { db } from '../../../../firebase/config';
-import Link from 'next/link';
 import { useTranslation } from '../../../useTranslation';
 import Toast from '../../../components/Toast';
 
 export default function SessionReportDetail() {
   const t = useTranslation();
-  const params = useParams();
+  const params = useParams(); // ← لاستخراج id من المسار
   const searchParams = useSearchParams();
   const router = useRouter();
-  const sessionId = params?.id;
+  const sessionId = params?.id; // ← هذا هو الصحيح
   const eventId = searchParams.get('eventId');
+
+  console.log('🔍 Debug: Session ID from path:', sessionId);
+  console.log('🔍 Debug: Event ID from query:', eventId);
 
   const [sessionData, setSessionData] = useState(null);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+  const [eventData, setEventData] = useState(null);
 
-  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
   useEffect(() => {
+    console.log('🚀 Starting data load...');
+
     if (!eventId) {
+      console.log('🚫 No eventId, redirecting to /events');
       router.push('/events');
       return;
     }
-  }, [eventId, router]);
 
-  useEffect(() => {
-    if (!sessionId || !eventId) return;
+    if (!sessionId) {
+      console.log('⚠️ No sessionId from path');
+      setLoading(false);
+      return;
+    }
 
-    const fetchData = async () => {
+    const loadData = async () => {
       try {
-        // تحميل بيانات الجلسة
+        // تحميل المؤتمر
+        console.log('📥 Loading event:', eventId);
+        const eventDoc = await getDoc(doc(db, 'events', eventId));
+        if (eventDoc.exists()) {
+          setEventData({ id: eventDoc.id, ...eventDoc.data() });
+          console.log('✅ Event loaded:', eventDoc.data().name);
+        }
+
+        // تحميل الجلسة
+        console.log('📥 Loading session:', sessionId);
         const sessionRef = doc(db, 'sessions', sessionId);
         const sessionSnap = await getDoc(sessionRef);
 
         if (!sessionSnap.exists()) {
+          console.error('❌ Session document NOT FOUND:', sessionId);
           setSessionData(null);
           setToast({ message: t('sessionNotFound'), type: 'error' });
           setLoading(false);
@@ -56,8 +73,10 @@ export default function SessionReportDetail() {
         }
 
         const session = { id: sessionSnap.id, ...sessionSnap.data() };
-        // التحقق من أن الجلسة تنتمي للمؤتمر الحالي
+        console.log('✅ Session loaded:', session.sessionName);
+
         if (session.eventId !== eventId) {
+          console.warn('⚠️ Session does not belong to this event');
           setSessionData(null);
           setToast({ message: t('sessionNotBelongToEvent'), type: 'error' });
           setLoading(false);
@@ -66,7 +85,8 @@ export default function SessionReportDetail() {
 
         setSessionData(session);
 
-        // تحميل سجلات الحضور الخاصة بالمؤتمر والجلسة
+        // تحميل سجلات الحضور
+        console.log('📥 Loading attendance records...');
         const q = query(
           collection(db, 'attendance'),
           where('sessionId', '==', sessionId),
@@ -80,12 +100,17 @@ export default function SessionReportDetail() {
           time: doc.data().timestamp?.toDate?.()?.toLocaleString() || t('unknown'),
         }));
         setAttendanceRecords(records);
+        console.log('✅ Attendance records loaded:', records.length);
 
-        // حساب الملخص
+        // بناء الملخص
         const userMap = {};
         records.forEach((rec) => {
           if (!userMap[rec.userId]) {
-            userMap[rec.userId] = { checkIns: [], checkOuts: [] };
+            userMap[rec.userId] = {
+              checkIns: [],
+              checkOuts: [],
+              userName: rec.userName || rec.userId,
+            };
           }
           if (rec.action === 'check-in') {
             userMap[rec.userId].checkIns.push(rec.timestamp?.toDate?.() || new Date());
@@ -96,7 +121,7 @@ export default function SessionReportDetail() {
 
         const summaryData = {};
         for (const userId in userMap) {
-          const { checkIns, checkOuts } = userMap[userId];
+          const { checkIns, checkOuts, userName } = userMap[userId];
           let totalMinutes = 0;
 
           for (let i = 0; i < Math.min(checkIns.length, checkOuts.length); i++) {
@@ -117,20 +142,23 @@ export default function SessionReportDetail() {
             checkIns: checkIns.length,
             checkOuts: checkOuts.length,
             totalMinutes: Math.round(totalMinutes),
+            userName,
           };
         }
 
         setSummary(summaryData);
+        console.log('✅ Summary built:', Object.keys(summaryData).length, 'users');
       } catch (error) {
-        console.error('Error loading session details:', error);
+        console.error('💥 Error in loadData:', error);
         setToast({ message: t('failedToLoadSessionDetails'), type: 'error' });
       } finally {
         setLoading(false);
+        console.log('🔚 Data load finished');
       }
     };
 
-    fetchData();
-  }, [sessionId, eventId, t]);
+    loadData();
+  }, [eventId, sessionId, t]);
 
   if (!eventId) {
     return (
@@ -146,24 +174,24 @@ export default function SessionReportDetail() {
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-4xl">
-        {/* رأس الصفحة */}
-        <div className="text-end mb-4">
-          <Link
-            href={`/reports?eventId=${eventId}`}
-            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => router.push(`/reports?eventId=${eventId}`)}
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 text-sm font-medium flex items-center gap-1"
           >
             ← {t('backToReports')}
-          </Link>
+          </button>
         </div>
 
         <div className="text-center mb-8">
           <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
             <span className="text-xl text-primary">🔍</span>
           </div>
-          <h1 className="text-2xl font-bold text-dark">{t('sessionDetails')}</h1>
+          <h1 className="text-2xl font-bold text-dark">
+            {t('sessionDetails')} — {eventData?.name || t('unknownEvent')}
+          </h1>
         </div>
 
-        {/* محتوى التفاصيل */}
         {loading ? (
           <div className="text-center py-12">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
@@ -172,13 +200,15 @@ export default function SessionReportDetail() {
         ) : !sessionData ? (
           <div className="text-center py-12 bg-white rounded-2xl shadow border border-gray-100">
             <p className="text-red-600 text-lg">{t('sessionNotFound')}</p>
-            <Link href={`/reports?eventId=${eventId}`} className="text-secondary font-medium mt-4 inline-block hover:underline">
+            <button
+              onClick={() => router.push(`/reports?eventId=${eventId}`)}
+              className="text-secondary font-medium mt-4 inline-block hover:underline"
+            >
               ← {t('backToReports')}
-            </Link>
+            </button>
           </div>
         ) : (
           <div className="space-y-8">
-            {/* معلومات الجلسة */}
             <div className="bg-white p-5 rounded-2xl shadow border border-gray-100">
               <h2 className="text-xl font-bold text-dark mb-2">{sessionData.sessionName}</h2>
               <p className="text-gray-600">
@@ -191,7 +221,6 @@ export default function SessionReportDetail() {
               )}
             </div>
 
-            {/* ملخص الحضور */}
             <div className="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
               <div className="p-4 border-b">
                 <h3 className="text-lg font-bold text-dark">{t('attendanceSummary')}</h3>
@@ -200,7 +229,7 @@ export default function SessionReportDetail() {
                 <table className="min-w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="border-b p-3 text-right font-semibold text-gray-700">{t('userId')}</th>
+                      <th className="border-b p-3 text-right font-semibold text-gray-700">{t('participantName')}</th>
                       <th className="border-b p-3 text-center font-semibold text-gray-700">{t('checkInCount')}</th>
                       <th className="border-b p-3 text-center font-semibold text-gray-700">{t('checkOutCount')}</th>
                       <th className="border-b p-3 text-center font-semibold text-gray-700">{t('totalTimeMinutes')}</th>
@@ -214,7 +243,7 @@ export default function SessionReportDetail() {
                     ) : (
                       Object.entries(summary).map(([userId, data]) => (
                         <tr key={userId} className="hover:bg-gray-50">
-                          <td className="border-b p-3 text-right font-mono text-sm">{userId}</td>
+                          <td className="border-b p-3 text-right font-medium">{data.userName}</td>
                           <td className="border-b p-3 text-center">{data.checkIns}</td>
                           <td className="border-b p-3 text-center">{data.checkOuts}</td>
                           <td className="border-b p-3 text-center font-bold">{data.totalMinutes}</td>
@@ -226,7 +255,6 @@ export default function SessionReportDetail() {
               </div>
             </div>
 
-            {/* السجلات الكاملة */}
             <div className="bg-white rounded-2xl shadow border border-gray-100">
               <div className="p-4 border-b">
                 <h3 className="text-lg font-bold text-dark">{t('fullRecords')}</h3>
@@ -240,7 +268,7 @@ export default function SessionReportDetail() {
                       key={rec.id}
                       className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
                     >
-                      <span className="font-mono text-sm text-gray-700">{rec.userId}</span>
+                      <span className="font-medium text-gray-700">{rec.userName || rec.userId}</span>
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-medium text-white ${
                           rec.action === 'check-in' ? 'bg-green-600' : 'bg-red-600'
@@ -255,20 +283,18 @@ export default function SessionReportDetail() {
               </div>
             </div>
 
-            {/* رجوع للتقارير */}
             <div className="text-center">
-              <Link
-                href={`/reports?eventId=${eventId}`}
+              <button
+                onClick={() => router.push(`/reports?eventId=${eventId}`)}
                 className="inline-flex items-center gap-1 text-secondary font-medium hover:underline"
               >
                 ← {t('backToReports')}
-              </Link>
+              </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Toast الإشعار */}
       {toast && (
         <Toast
           message={toast.message}

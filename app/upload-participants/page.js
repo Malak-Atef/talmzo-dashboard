@@ -4,9 +4,8 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import Link from 'next/link';
 import { useTranslation } from '../useTranslation';
 import Toast from '../components/Toast';
 
@@ -16,21 +15,34 @@ function UploadParticipantsContent() {
   const router = useRouter();
   const eventId = searchParams.get('eventId');
 
+  const [eventData, setEventData] = useState(null);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState(null);
-
   const [manualName, setManualName] = useState('');
   const [manualTeam, setManualTeam] = useState('');
   const [manualGroup, setManualGroup] = useState('');
 
-  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
   useEffect(() => {
     if (!eventId) {
       router.push('/events');
+      return;
     }
-  }, [eventId, router]);
+
+    const loadEvent = async () => {
+      try {
+        const eventDoc = await getDoc(doc(db, 'events', eventId));
+        if (eventDoc.exists()) {
+          setEventData({ id: eventDoc.id, ...eventDoc.data() });
+        }
+      } catch (err) {
+        console.error('Error loading event:', err);
+      }
+    };
+
+    loadEvent();
+  }, [eventId]); // ← فقط eventId
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -140,21 +152,23 @@ function UploadParticipantsContent() {
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-3xl">
-        {/* رأس الصفحة */}
-        <div className="text-end mb-4">
-          <Link
-            href={`/?eventId=${eventId}`}
-            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+        {/* رأس الصفحة — زر رجوع احترافي */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => router.push(`/?eventId=${eventId}`)}
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 text-sm font-medium flex items-center gap-1"
           >
             ← {t('backToDashboard')}
-          </Link>
+          </button>
         </div>
 
         <div className="text-center mb-10">
           <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl text-accent">👥</span>
           </div>
-          <h1 className="text-3xl font-bold text-dark">{t('uploadParticipants')}</h1>
+          <h1 className="text-3xl font-bold text-dark">
+            {t('uploadParticipants')} — {eventData?.name || t('unknownEvent')}
+          </h1>
           <p className="text-gray-600 mt-2">{t('manageParticipantsDescription')}</p>
         </div>
 
@@ -240,14 +254,14 @@ function UploadParticipantsContent() {
           </form>
         </div>
 
-        {/* رابط طباعة الكروت */}
+        {/* زر طباعة الكروت — احترافي */}
         <div className="text-center">
-          <Link
-            href={`/print-cards?eventId=${eventId}`}
-            className="inline-flex items-center gap-2 text-secondary font-medium hover:underline"
+          <button
+            onClick={() => router.push(`/print-cards?eventId=${eventId}`)}
+            className="inline-flex items-center gap-2 text-secondary font-medium hover:underline hover:text-primary transition"
           >
             👁️ {t('viewPrintCards')}
-          </Link>
+          </button>
         </div>
       </div>
 

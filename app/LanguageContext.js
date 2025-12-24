@@ -5,27 +5,28 @@ import { createContext, useContext, useState, useEffect } from 'react';
 
 const LanguageContext = createContext();
 
-const getInitialLang = () => {
-  if (typeof window === 'undefined') return 'ar'; // for SSR
-  const saved = localStorage.getItem('talmzo-lang');
-  const browserLang = navigator.language.startsWith('ar') ? 'ar' : 'en';
-  return saved || browserLang;
-};
-
 export function LanguageProvider({ children }) {
-  const [lang, setLang] = useState(getInitialLang);
+  // حالة أولية آمنة للخادم
+  const [lang, setLang] = useState('ar'); // ← الافتراضي
 
-  // تحديث localStorage وHTML attributes عند تغيير اللغة
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('talmzo-lang', lang);
-      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
-      document.documentElement.lang = lang;
-    }
-  }, [lang]);
+    // بعد التحميل في العميل، نأخذ القيمة الحقيقية
+    const saved = localStorage.getItem('talmzo-lang');
+    const browserLang = navigator.language.startsWith('ar') ? 'ar' : 'en';
+    const finalLang = saved || browserLang;
+    setLang(finalLang);
+
+    // تطبيق الاتجاه على <html>
+    document.documentElement.dir = finalLang === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = finalLang;
+  }, []);
 
   const toggleLanguage = () => {
-    setLang((prev) => (prev === 'ar' ? 'en' : 'ar'));
+    const newLang = lang === 'ar' ? 'en' : 'ar';
+    setLang(newLang);
+    localStorage.setItem('talmzo-lang', newLang);
+    document.documentElement.dir = newLang === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = newLang;
   };
 
   return (

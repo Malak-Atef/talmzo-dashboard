@@ -1,12 +1,14 @@
 // app/page.js
 'use client';
 
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useLanguage } from './LanguageContext';
 import { useTranslation } from './useTranslation';
 import Link from 'next/link';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import Toast from './components/Toast';
 
 function HomeContent() {
@@ -16,21 +18,66 @@ function HomeContent() {
   const router = useRouter();
   const eventId = searchParams.get('eventId');
 
-  // إذا ما وُجد eventId، لا نفعل شيئًا (الصفحة تُعرض كقائمة مؤتمرات)
-  // لكن لو eventId موجود، نعرض لوحة التحكم
+  const [eventData, setEventData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // تحميل بيانات المؤتمر مباشرة باستخدام eventId كـ document ID
+  useEffect(() => {
+    if (eventId) {
+      setLoading(true);
+      const loadEvent = async () => {
+        try {
+          const eventDoc = await getDoc(doc(db, 'events', eventId));
+          if (eventDoc.exists()) {
+            const event = { id: eventDoc.id, ...eventDoc.data() };
+            setEventData(event);
+          } else {
+            router.push('/events');
+          }
+        } catch (err) {
+          console.error('Error loading event:', err);
+          router.push('/events');
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadEvent();
+    }
+  }, [eventId, router]);
+
+  // حالة التحميل
+  if (eventId && (loading || !eventData)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          <p className="mt-4 text-gray-600">جاري تحميل المؤتمر...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       {eventId ? (
         <>
           {/* لوحة التحكم للمؤتمر */}
-          <div className="text-end w-full max-w-4xl mb-6">
-            <Link
-              href="/events"
-              className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+          <div className="flex justify-between w-full max-w-4xl mb-6">
+            {/* زر العودة إلى المؤتمرات */}
+            <button
+              onClick={() => router.push('/events')}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 text-sm font-medium"
             >
               ← {t('backToConferences')}
-            </Link>
+            </button>
+
+            {/* زر تبديل اللغة */}
+            <button
+              onClick={toggleLanguage}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 text-sm font-medium"
+            >
+              {lang === 'ar' ? 'English' : 'العربية'}
+            </button>
           </div>
 
           <div className="text-center mb-8">
@@ -41,22 +88,11 @@ function HomeContent() {
               height={200}
               className="mx-auto object-contain mb-4"
             />
-            <h1 className="text-3xl font-bold text-dark mt-2">{t('dashboard')}</h1>
-            <p className="text-gray-600 mt-2 text-sm">
-              {t('currentConferenceId')}: <code className="bg-gray-100 px-2 py-1 rounded">{eventId}</code>
-            </p>
+            {/* عرض اسم المؤتمر الحقيقي */}
+            <h1 className="text-3xl font-bold text-dark mt-2">{eventData?.name || t('dashboard')}</h1>
           </div>
 
-          <button
-            onClick={toggleLanguage}
-            className="mb-8 px-5 py-2 bg-gray-100 hover:bg-gray-200 rounded-full text-sm font-medium transition shadow-sm"
-            aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
-          >
-            {lang === 'ar' ? 'English' : 'العربية'}
-          </button>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 w-full max-w-4xl">
-            {/* بطاقة: إضافة جلسة */}
             <Link
               href={`/add-session?eventId=${eventId}`}
               className="card bg-white p-5 rounded-2xl shadow-lg hover:shadow-xl transition-all border border-gray-100 flex flex-col items-center text-center"
@@ -65,10 +101,8 @@ function HomeContent() {
                 <span className="text-xl text-primary">➕</span>
               </div>
               <h2 className="text-lg font-bold text-dark mb-1">{t('addSession')}</h2>
-              <p className="text-gray-600 text-xs">{t('createNewSession')}</p>
             </Link>
 
-            {/* بطاقة: الجلسات */}
             <Link
               href={`/sessions?eventId=${eventId}`}
               className="card bg-white p-5 rounded-2xl shadow-lg hover:shadow-xl transition-all border border-gray-100 flex flex-col items-center text-center"
@@ -77,22 +111,18 @@ function HomeContent() {
                 <span className="text-xl text-secondary">👁️</span>
               </div>
               <h2 className="text-lg font-bold text-dark mb-1">{t('sessions')}</h2>
-              <p className="text-gray-600 text-xs">{t('viewAllSessions')}</p>
             </Link>
 
-            {/* بطاقة: التقارير */}
             <Link
               href={`/reports?eventId=${eventId}`}
               className="card bg-white p-5 rounded-2xl shadow-lg hover:shadow-xl transition-all border border-gray-100 flex flex-col items-center text-center"
             >
-              <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center mb-3">
-                <span className="text-xl text-secondary">📊</span>
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mb-3">
+                <span className="text-xl text-green-600">📊</span>
               </div>
               <h2 className="text-lg font-bold text-dark mb-1">{t('reports')}</h2>
-              <p className="text-gray-600 text-xs">{t('viewAttendanceReports')}</p>
             </Link>
 
-            {/* بطاقة: رفع المشاركين */}
             <Link
               href={`/upload-participants?eventId=${eventId}`}
               className="card bg-white p-5 rounded-2xl shadow-lg hover:shadow-xl transition-all border border-gray-100 flex flex-col items-center text-center"
@@ -101,13 +131,12 @@ function HomeContent() {
                 <span className="text-xl text-accent">👥</span>
               </div>
               <h2 className="text-lg font-bold text-dark mb-1">{t('uploadParticipants')}</h2>
-              <p className="text-gray-600 text-xs">{t('manageParticipants')}</p>
             </Link>
           </div>
         </>
       ) : (
         <>
-          {/* لوحة المؤتمرات */}
+          {/* الصفحة الرئيسية (قائمة المؤتمرات) */}
           <div className="text-center mb-12">
             <Image
               src="/talmzo-logo.png"
@@ -119,13 +148,15 @@ function HomeContent() {
             <h1 className="text-4xl font-bold text-dark mt-2">{t('dashboard')}</h1>
           </div>
 
-          <button
-            onClick={toggleLanguage}
-            className="mb-10 px-5 py-2 bg-gray-100 hover:bg-gray-200 rounded-full text-sm font-medium transition shadow-sm"
-            aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
-          >
-            {lang === 'ar' ? 'English' : 'العربية'}
-          </button>
+          <div className="flex justify-center mb-10">
+            <button
+              onClick={toggleLanguage}
+              className="px-5 py-2 bg-gray-100 hover:bg-gray-200 rounded-full text-sm font-medium transition shadow-sm"
+              aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
+            >
+              {lang === 'ar' ? 'English' : 'العربية'}
+            </button>
+          </div>
 
           <div className="text-center">
             <Link
@@ -141,9 +172,6 @@ function HomeContent() {
       <div className="mt-16 text-gray-500 text-sm">
         © {new Date().getFullYear()} By Malak Atef | All rights reserved.
       </div>
-
-      {/* Toast */}
-      <Toast message="Test" type="success" onClose={() => {}} />
     </div>
   );
 }

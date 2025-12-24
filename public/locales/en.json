@@ -112,7 +112,24 @@
       "sessionNotBelongToEvent": "Session does not belong to this conference",
         "selectKnownConference": "Select a known conference",
   "otherConference": "Other Conference",
-  "addConference": "Add Conference"
+  "addConference": "Add Conference",
+      "unknownEvent": "Unknown Event",
+  "unknownSession": "Unknown Session",
+    "smartAttendanceControl": "Smart Attendance Control",
+  "presentNow": "Present Now",
+  "absentNow": "Absent Now",
+  "noOnePresent": "No one is present",
+  "everyonePresent": "Everyone is present",
+  "bulkCheckOut": "Bulk Check Out",
+  "bulkCheckIn": "Bulk Check In",
+  "confirmBulkCheckOut": "Are you sure you want to check out all present participants?",
+  "bulkCheckOutSuccess": "Successfully checked out everyone",
+  "bulkCheckOutFailed": "Failed to check out everyone",
+  "bulkCheckInSuccess": "Successfully checked in {n} participant(s)",
+  "bulkCheckInFailed": "Failed to check in participants",
+  "selectParticipantsToCheckIn": "Please select participants to check in",
+  "noOneToCheckOut": "No one to check out"
+
 
 
 

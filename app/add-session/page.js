@@ -6,9 +6,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslation } from '../useTranslation';
 import { useLanguage } from '../LanguageContext';
 import { db } from '../../firebase/config';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import Toast from '../components/Toast';
-import Link from 'next/link';
 
 function AddSessionContent() {
   const t = useTranslation();
@@ -23,13 +22,27 @@ function AddSessionContent() {
   const [groupName, setGroupName] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [eventData, setEventData] = useState(null);
 
-  // إذا ما وُجد eventId، نوجه إلى صفحة المؤتمرات
   useEffect(() => {
     if (!eventId) {
       router.push('/events');
+      return;
     }
-  }, [eventId, router]);
+
+    const loadEvent = async () => {
+      try {
+        const eventDoc = await getDoc(doc(db, 'events', eventId));
+        if (eventDoc.exists()) {
+          setEventData({ id: eventDoc.id, ...eventDoc.data() });
+        }
+      } catch (err) {
+        console.error('Error loading event:', err);
+      }
+    };
+
+    loadEvent();
+  }, [eventId]); // ← فقط eventId
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -63,27 +76,29 @@ function AddSessionContent() {
   };
 
   if (!eventId) {
-    return null; // سيتم توجيهه بواسطة useEffect
+    return null;
   }
 
   return (
     <div className="min-h-screen bg-light flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-xl">
-        {/* رأس الصفحة */}
-        <div className="text-end mb-6">
-          <Link
-            href={`/?eventId=${eventId}`}
-            className="inline-flex items-center gap-1 text-sm text-secondary hover:underline"
+        {/* رأس الصفحة — زر رجوع احترافي */}
+        <div className="flex justify-end mb-6">
+          <button
+            onClick={() => router.push(`/?eventId=${eventId}`)}
+            className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 text-sm font-medium flex items-center gap-1"
           >
             ← {t('backToDashboard')}
-          </Link>
+          </button>
         </div>
 
         <div className="text-center mb-8">
           <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl text-primary">➕</span>
           </div>
-          <h1 className="text-3xl font-bold text-dark">{t('addSession')}</h1>
+          <h1 className="text-3xl font-bold text-dark">
+            {t('addSession')} — {eventData?.name || t('unknownEvent')}
+          </h1>
           <p className="text-gray-600 mt-2">{t('fillSessionDetails')}</p>
         </div>
 
@@ -155,12 +170,13 @@ function AddSessionContent() {
                 {loading ? t('saving') : t('saveSession')}
               </button>
 
-              <Link
-                href={`/?eventId=${eventId}`}
-                className="flex-1 py-3 text-center rounded-lg font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
+              <button
+                type="button"
+                onClick={() => router.push(`/?eventId=${eventId}`)}
+                className="flex-1 py-3 rounded-lg font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
               >
                 {t('cancel')}
-              </Link>
+              </button>
             </div>
           </form>
         </div>
