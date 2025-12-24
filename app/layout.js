@@ -1,8 +1,9 @@
 // app/layout.js
-// ⚠️ بدون 'use client' ← هذا ملف Server Component
+// لا تضع 'use client' هنا ← هذا ملف Server Component
 
 import { LanguageProvider } from './LanguageContext';
 import './globals.css';
+
 export default function RootLayout({ children }) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>

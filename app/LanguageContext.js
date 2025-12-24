@@ -6,17 +6,14 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const LanguageContext = createContext();
 
 export function LanguageProvider({ children }) {
-  // حالة أولية آمنة للخادم
-  const [lang, setLang] = useState('ar'); // ← الافتراضي
+  const [lang, setLang] = useState(null); // ← null للخادم
 
   useEffect(() => {
-    // بعد التحميل في العميل، نأخذ القيمة الحقيقية
+    // هذا يُنفَّذ فقط في العميل
     const saved = localStorage.getItem('talmzo-lang');
     const browserLang = navigator.language.startsWith('ar') ? 'ar' : 'en';
     const finalLang = saved || browserLang;
     setLang(finalLang);
-
-    // تطبيق الاتجاه على <html>
     document.documentElement.dir = finalLang === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = finalLang;
   }, []);
@@ -29,8 +26,11 @@ export function LanguageProvider({ children }) {
     document.documentElement.lang = newLang;
   };
 
+  // إذا كانت اللغة غير معرّفة بعد (في الخادم)، استخدم 'ar' مؤقتًا
+  const currentLang = lang || 'ar';
+
   return (
-    <LanguageContext.Provider value={{ lang, toggleLanguage }}>
+    <LanguageContext.Provider value={{ lang: currentLang, toggleLanguage }}>
       {children}
     </LanguageContext.Provider>
   );
