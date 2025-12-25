@@ -33,109 +33,90 @@ function AdminScanContent() {
   const [toast, setToast] = useState(null);
   const [sessionsList, setSessionsList] = useState([]);
 
-  // ✅ القوائم المباشرة من Firestore — بدون حفظ محلي لسجلات الحضور
+  // ✅ نحتفظ بسجلات الحضور — ولكن نُحدّثها بشكل ذكي
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [presentUsers, setPresentUsers] = useState([]);
   const [absentUsers, setAbsentUsers] = useState([]);
 
   const scanner = useRef(null);
 
-  // 🔁 دالة إعادة تحميل البيانات من Firestore (المصدر الوحيد للحقيقة)
-  const reloadAttendanceData = async () => {
-    if (!eventId || !sessionData?.id) return;
-
-    try {
-      // تحميل المشاركين
-      const participantsQ = query(collection(db, 'participants'), where('eventId', '==', eventId));
-      const participantsSnap = await getDocs(participantsQ);
-      const participantsList = participantsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      // تحميل سجلات الحضور للجلسة الحالية
-      const attendanceQ = query(
-        collection(db, 'attendance'),
-        where('sessionId', '==', sessionData.id)
-      );
-      const attendanceSnap = await getDocs(attendanceQ);
-      const attendanceMap = {};
-      attendanceSnap.docs.forEach(doc => {
-        const data = doc.data();
-        // نحتفظ بأحدث سجل لكل مستخدم
-        if (!attendanceMap[data.userId] || (attendanceMap[data.userId].timestamp?.seconds < data.timestamp?.seconds)) {
-          attendanceMap[data.userId] = data;
-        }
-      });
-
-      // فرز الحاضرين والغائبين
-      const present = [];
-      const absent = [];
-      participantsList.forEach(p => {
-        const lastAction = attendanceMap[p.qrId]?.action;
-        if (lastAction === 'check-in') {
-          present.push(p);
-        } else {
-          absent.push(p);
-        }
-      });
-
-      setParticipants(participantsList);
-      setPresentUsers(present);
-      setAbsentUsers(absent);
-    } catch (err) {
-      console.error('Error reloading attendance data:', err);
+  // 🔁 دالة تحميل البيانات (بما في ذلك سجلات الحضور)
+  const loadData = async () => {
+    if (!eventId && !sessionId) {
+      router.push('/events');
+      return;
     }
-  };
 
-  // تحميل البيانات الأولية
-  useEffect(() => {
-    const loadData = async () => {
-      if (!eventId && !sessionId) {
-        router.push('/events');
-        return;
-      }
+    setLoading(true);
+    try {
+      let session = null;
 
-      setLoading(true);
-      try {
-        let session = null;
+      if (sessionId) {
+        const sessionDoc = await getDoc(doc(db, 'sessions', sessionId));
+        if (!sessionDoc.exists()) {
+          setToast({ message: t('sessionNotFound'), type: 'error' });
+          router.push('/events');
+          return;
+        }
+        session = { id: sessionDoc.id, ...sessionDoc.data() };
+        setSessionData(session);
 
-        if (sessionId) {
-          const sessionDoc = await getDoc(doc(db, 'sessions', sessionId));
-          if (!sessionDoc.exists()) {
-            setToast({ message: t('sessionNotFound'), type: 'error' });
-            router.push('/events');
-            return;
-          }
-          session = { id: sessionDoc.id, ...sessionDoc.data() };
+        const eventDoc = await getDoc(doc(db, 'events', session.eventId));
+        if (eventDoc.exists()) {
+          setEventData({ id: eventDoc.id, ...eventDoc.data() });
+        }
+      } else if (eventId) {
+        const q = query(collection(db, 'sessions'), where('eventId', '==', eventId));
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setSessionsList(list);
+        if (list.length > 0) {
+          session = list[0];
           setSessionData(session);
-
-          const eventDoc = await getDoc(doc(db, 'events', session.eventId));
+          const eventDoc = await getDoc(doc(db, 'events', list[0].eventId));
           if (eventDoc.exists()) {
             setEventData({ id: eventDoc.id, ...eventDoc.data() });
           }
-        } else if (eventId) {
-          const q = query(collection(db, 'sessions'), where('eventId', '==', eventId));
-          const snapshot = await getDocs(q);
-          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setSessionsList(list);
-          if (list.length > 0) {
-            session = list[0];
-            setSessionData(session);
-            const eventDoc = await getDoc(doc(db, 'events', list[0].eventId));
-            if (eventDoc.exists()) {
-              setEventData({ id: eventDoc.id, ...eventDoc.data() });
-            }
-          }
         }
-
-        if (session) {
-          await reloadAttendanceData();
-        }
-      } catch (err) {
-        console.error('Error loading initial data:', err);
-        setToast({ message: t('failedToLoadSessions'), type: 'error' });
-      } finally {
-        setLoading(false);
       }
-    };
 
+      if (session) {
+        // تحميل المشاركين
+        const participantsQ = query(collection(db, 'participants'), where('eventId', '==', session.eventId));
+        const participantsSnap = await getDocs(participantsQ);
+        const participantsList = participantsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setParticipants(participantsList);
+
+        // تحميل سجلات الحضور
+        const attendanceQ = query(
+          collection(db, 'attendance'),
+          where('sessionId', '==', session.id)
+        );
+        const attendanceSnap = await getDocs(attendanceQ);
+        const attendanceList = attendanceSnap.docs.map(doc => doc.data());
+        setAttendanceRecords(attendanceList);
+
+        // تحليل الحضور
+        const userStatus = {};
+        attendanceList.forEach(rec => {
+          userStatus[rec.userId] = rec.action === 'check-in' ? 'present' : 'absent';
+        });
+
+        const present = participantsList.filter(p => userStatus[p.qrId] === 'present');
+        const absent = participantsList.filter(p => userStatus[p.qrId] !== 'present');
+
+        setPresentUsers(present);
+        setAbsentUsers(absent);
+      }
+    } catch (err) {
+      console.error('Error loading ', err);
+      setToast({ message: t('failedToLoadSessions'), type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, [eventId, sessionId]);
 
@@ -163,17 +144,17 @@ function AdminScanContent() {
 
       const qrCodeSuccessCallback = async (decodedText) => {
         if (decodedText) {
-          handleScannedUserId(decodedText);
+          // ✅ التأكد أن القيمة ليست فارغة
+          handleScannedUserId(decodedText.trim());
         }
         await html5QrCode.stop();
         setIsScanning(false);
-        // إعادة التشغيل بعد 500ms فقط (أسرع)
         setTimeout(() => startScanner(), 500);
       };
 
       await html5QrCode.start(
         { facingMode: 'environment' },
-        { fps: 15, qrbox: { width: 250, height: 250 } }, // زيادة FPS لسرعة أكبر
+        { fps: 15, qrbox: { width: 250, height: 250 } },
         qrCodeSuccessCallback,
         () => {}
       );
@@ -193,43 +174,64 @@ function AdminScanContent() {
     };
   }, []);
 
-  // ✅ تسجيل الحضور — بدون تحديث محلي
-  const handleScannedUserId = async (userId) => {
+  // ✅ تسجيل الحضور — بشكل دقيق
+  const handleScannedUserId = async (qrId) => {
     if (!sessionData || !eventId) return;
 
-    try {
-      // اهتزاز فوري
-      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-        navigator.vibrate(100);
-      }
-
-      // حفظ السجل مباشرة
-      await addDoc(collection(db, 'attendance'), {
-        eventId,
-        sessionId: sessionData.id,
-        userId,
-        action: 'check-in', // نسجل دخول مباشر — لا نبحث في السجلات
-        timestamp: serverTimestamp(),
-      });
-
-      // إشعار نجاح
-      setToast({ message: t('checkInSuccess'), type: 'success' });
-
-      // ✅ تحديث البيانات من المصدر (Firestore) بعد 200ms فقط
-      setTimeout(() => reloadAttendanceData(), 200);
-    } catch (err) {
-      console.error('Scan save error:', err);
-      setToast({ message: t('scanFailed'), type: 'error' });
+    // التحقق من أن المستخدم موجود
+    const user = participants.find(p => p.qrId === qrId);
+    if (!user) {
+      setToast({ message: t('participantNotFound'), type: 'error' });
+      return;
     }
+
+    // اهتزاز فوري
+    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(100);
+    }
+
+    // تحديد الإجراء
+    const userRecords = attendanceRecords.filter(rec => rec.userId === qrId);
+    const lastRecord = userRecords.length > 0 ? userRecords[userRecords.length - 1] : null;
+    const action = lastRecord?.action === 'check-in' ? 'check-out' : 'check-in';
+
+    // حفظ السجل
+    const displayName = `${user.name} (${user.team || t('notSpecified')} - ${user.group || t('notSpecified')})`;
+    await addDoc(collection(db, 'attendance'), {
+      eventId,
+      sessionId: sessionData.id,
+      userId: qrId,
+      userName: displayName,
+      action,
+      timestamp: serverTimestamp(),
+    });
+
+    // ✅ تحديث محلي فوري (بدون إعادة تحميل كامل)
+    const newRecord = { eventId, sessionId: sessionData.id, userId: qrId, userName: displayName, action, timestamp: new Date() };
+    setAttendanceRecords(prev => [...prev, newRecord]);
+
+    if (action === 'check-in') {
+      setPresentUsers(prev => [...prev, user]);
+      setAbsentUsers(prev => prev.filter(u => u.qrId !== qrId));
+    } else {
+      setPresentUsers(prev => prev.filter(u => u.qrId !== qrId));
+      setAbsentUsers(prev => [...prev, user]);
+    }
+
+    setToast({ message: `${action === 'check-in' ? t('checkIn') : t('checkOut')} — ${user.name}`, type: 'success' });
   };
 
-  const handleManualCheckIn = async (userId) => {
-    await handleScannedUserId(userId);
+  const handleManualCheckIn = (qrId) => {
+    handleScannedUserId(qrId);
   };
 
   const handleSelectSession = (sessId) => {
     const sess = sessionsList.find(s => s.id === sessId);
-    if (sess) setSessionData(sess);
+    if (sess) {
+      setSessionData(sess);
+      // إعادة تحميل البيانات للجلسة الجديدة
+      loadData();
+    }
   };
 
   if (!eventId && !sessionId) {
@@ -244,7 +246,7 @@ function AdminScanContent() {
   }
 
   return (
-    <div className="min-h-screen bg-light flex flex-col items-center py-4 px-2">
+    <div className="min-h-screen bg-light flex flex-col items-center py-6 px-4">
       <button
         onClick={() => router.push(`/?eventId=${eventId}`)}
         className="self-start mb-2 px-3 py-1 bg-white rounded shadow text-sm"
@@ -280,34 +282,43 @@ function AdminScanContent() {
               </div>
             </div>
 
-            {/* لا نعرض القوائم إذا كان العدد كبيرًا — لتوفير الأداء */}
-            {participants.length <= 50 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white p-3 rounded-lg">
-                  <h4 className="font-bold text-green-600">{t('presentNow')} ({presentUsers.length})</h4>
-                  <div className="max-h-32 overflow-y-auto mt-1">
-                    {presentUsers.map(p => (
-                      <div key={p.qrId} className="text-sm py-1">{p.name}</div>
-                    ))}
-                  </div>
-                </div>
-                <div className="bg-white p-3 rounded-lg">
-                  <h4 className="font-bold text-gray-600">{t('absentNow')} ({absentUsers.length})</h4>
-                  <div className="max-h-32 overflow-y-auto mt-1">
-                    {absentUsers.slice(0, 10).map(p => (
-                      <div key={p.qrId} className="text-sm py-1">{p.name}</div>
-                    ))}
-                    {absentUsers.length > 10 && <div className="text-xs">+{absentUsers.length - 10} أكثر</div>}
-                  </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* الحاضرون الآن */}
+              <div className="bg-white p-3 rounded-lg">
+                <h4 className="font-bold text-green-600">{t('presentNow')} ({presentUsers.length})</h4>
+                <div className="max-h-32 overflow-y-auto mt-1">
+                  {presentUsers.map(p => (
+                    <div key={p.qrId} className="text-sm py-1 flex justify-between">
+                      <span>{p.name}</span>
+                      <button
+                        onClick={() => handleScannedUserId(p.qrId)}
+                        className="text-xs text-red-600"
+                      >
+                        {t('checkOut')}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
-            )}
 
-            {participants.length > 50 && (
-              <div className="text-center text-gray-600 text-sm">
-                ✅ {presentUsers.length} حاضر من أصل {participants.length}
+              {/* الغائبون */}
+              <div className="bg-white p-3 rounded-lg">
+                <h4 className="font-bold text-gray-600">{t('absentNow')} ({absentUsers.length})</h4>
+                <div className="max-h-32 overflow-y-auto mt-1">
+                  {absentUsers.map(p => (
+                    <div key={p.qrId} className="text-sm py-1 flex justify-between">
+                      <span>{p.name}</span>
+                      <button
+                        onClick={() => handleScannedUserId(p.qrId)}
+                        className="text-xs text-green-600"
+                      >
+                        {t('checkIn')}
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-            )}
+            </div>
           </>
         ) : sessionsList.length > 0 ? (
           <select
