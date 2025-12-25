@@ -32,17 +32,59 @@ function AdminScanContent() {
   const [isScanning, setIsScanning] = useState(false);
   const [toast, setToast] = useState(null);
   const [sessionsList, setSessionsList] = useState([]);
-  const [attendanceRecords, setAttendanceRecords] = useState([]); // ← سجلات الحضور
-  const [presentUsers, setPresentUsers] = useState([]); // ← الحاضرون الآن
-  const [absentUsers, setAbsentUsers] = useState([]); // ← الغائبون
 
-  // حالة مربع الحوار
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmAction, setConfirmAction] = useState(null);
+  // ✅ القوائم المباشرة من Firestore — بدون حفظ محلي لسجلات الحضور
+  const [presentUsers, setPresentUsers] = useState([]);
+  const [absentUsers, setAbsentUsers] = useState([]);
 
   const scanner = useRef(null);
 
-  // تحميل البيانات
+  // 🔁 دالة إعادة تحميل البيانات من Firestore (المصدر الوحيد للحقيقة)
+  const reloadAttendanceData = async () => {
+    if (!eventId || !sessionData?.id) return;
+
+    try {
+      // تحميل المشاركين
+      const participantsQ = query(collection(db, 'participants'), where('eventId', '==', eventId));
+      const participantsSnap = await getDocs(participantsQ);
+      const participantsList = participantsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // تحميل سجلات الحضور للجلسة الحالية
+      const attendanceQ = query(
+        collection(db, 'attendance'),
+        where('sessionId', '==', sessionData.id)
+      );
+      const attendanceSnap = await getDocs(attendanceQ);
+      const attendanceMap = {};
+      attendanceSnap.docs.forEach(doc => {
+        const data = doc.data();
+        // نحتفظ بأحدث سجل لكل مستخدم
+        if (!attendanceMap[data.userId] || (attendanceMap[data.userId].timestamp?.seconds < data.timestamp?.seconds)) {
+          attendanceMap[data.userId] = data;
+        }
+      });
+
+      // فرز الحاضرين والغائبين
+      const present = [];
+      const absent = [];
+      participantsList.forEach(p => {
+        const lastAction = attendanceMap[p.qrId]?.action;
+        if (lastAction === 'check-in') {
+          present.push(p);
+        } else {
+          absent.push(p);
+        }
+      });
+
+      setParticipants(participantsList);
+      setPresentUsers(present);
+      setAbsentUsers(absent);
+    } catch (err) {
+      console.error('Error reloading attendance data:', err);
+    }
+  };
+
+  // تحميل البيانات الأولية
   useEffect(() => {
     const loadData = async () => {
       if (!eventId && !sessionId) {
@@ -74,7 +116,8 @@ function AdminScanContent() {
           const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setSessionsList(list);
           if (list.length > 0) {
-            setSessionData(list[0]);
+            session = list[0];
+            setSessionData(session);
             const eventDoc = await getDoc(doc(db, 'events', list[0].eventId));
             if (eventDoc.exists()) {
               setEventData({ id: eventDoc.id, ...eventDoc.data() });
@@ -82,41 +125,11 @@ function AdminScanContent() {
           }
         }
 
-        const targetEventId = session?.eventId || (sessionsList[0]?.eventId) || eventId;
-        if (targetEventId) {
-          // تحميل المشاركين
-          const participantsQ = query(collection(db, 'participants'), where('eventId', '==', targetEventId));
-          const participantsSnap = await getDocs(participantsQ);
-          const participantsList = participantsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setParticipants(participantsList);
-
-          // تحميل سجلات الحضور
-          const attendanceQ = query(
-            collection(db, 'attendance'),
-            where('eventId', '==', targetEventId),
-            where('sessionId', '==', sessionId || sessionsList[0]?.id)
-          );
-          const attendanceSnap = await getDocs(attendanceQ);
-          const attendanceList = attendanceSnap.docs.map(doc => doc.data());
-          setAttendanceRecords(attendanceList);
-
-          // تحليل الحضور
-          const userStatus = {};
-          attendanceList.forEach(rec => {
-            if (!userStatus[rec.userId]) {
-              userStatus[rec.userId] = 'absent';
-            }
-            userStatus[rec.userId] = rec.action === 'check-in' ? 'present' : 'absent';
-          });
-
-          const present = participantsList.filter(p => userStatus[p.qrId] === 'present');
-          const absent = participantsList.filter(p => userStatus[p.qrId] !== 'present');
-
-          setPresentUsers(present);
-          setAbsentUsers(absent);
+        if (session) {
+          await reloadAttendanceData();
         }
       } catch (err) {
-        console.error('Error loading ', err);
+        console.error('Error loading initial data:', err);
         setToast({ message: t('failedToLoadSessions'), type: 'error' });
       } finally {
         setLoading(false);
@@ -126,26 +139,7 @@ function AdminScanContent() {
     loadData();
   }, [eventId, sessionId]);
 
-  // تحديث قوائم الحاضرين والغائبين عند تغيير سجلات الحضور
-  useEffect(() => {
-    if (!participants.length || !attendanceRecords.length) return;
-
-    const userStatus = {};
-    attendanceRecords.forEach(rec => {
-      if (!userStatus[rec.userId]) {
-        userStatus[rec.userId] = 'absent';
-      }
-      userStatus[rec.userId] = rec.action === 'check-in' ? 'present' : 'absent';
-    });
-
-    const present = participants.filter(p => userStatus[p.qrId] === 'present');
-    const absent = participants.filter(p => userStatus[p.qrId] !== 'present');
-
-    setPresentUsers(present);
-    setAbsentUsers(absent);
-  }, [attendanceRecords, participants]);
-
-  // بدء المسح بالكاميرا
+  // الكاميرا
   const startScanner = async () => {
     if (!sessionData) {
       setToast({ message: t('selectSessionFirst'), type: 'error' });
@@ -168,15 +162,18 @@ function AdminScanContent() {
       scanner.current = html5QrCode;
 
       const qrCodeSuccessCallback = async (decodedText) => {
-        handleScannedUserId(decodedText);
+        if (decodedText) {
+          handleScannedUserId(decodedText);
+        }
         await html5QrCode.stop();
         setIsScanning(false);
-        setTimeout(() => startScanner(), 1500);
+        // إعادة التشغيل بعد 500ms فقط (أسرع)
+        setTimeout(() => startScanner(), 500);
       };
 
       await html5QrCode.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        { fps: 15, qrbox: { width: 250, height: 250 } }, // زيادة FPS لسرعة أكبر
         qrCodeSuccessCallback,
         () => {}
       );
@@ -196,144 +193,43 @@ function AdminScanContent() {
     };
   }, []);
 
-  // حفظ الحضور
-const saveAttendance = async (userId, actionOverride = null) => {
-  const activeSession = sessionData || sessionsList[0];
-  if (!eventId || !activeSession) {
-    setToast({ message: t('missingEventOrSession'), type: 'error' });
-    return;
-  }
+  // ✅ تسجيل الحضور — بدون تحديث محلي
+  const handleScannedUserId = async (userId) => {
+    if (!sessionData || !eventId) return;
 
-  try {
-    const userQuery = query(collection(db, 'participants'), where('qrId', '==', userId));
-    const userSnapshot = await getDocs(userQuery);
-    let displayName = userId;
-    let userObj = null;
-    if (!userSnapshot.empty) {
-      const data = userSnapshot.docs[0].data();
-      userObj = { qrId: userId, ...data };
-      displayName = `${data.name} (${data.team || t('notSpecified')} - ${data.group || t('notSpecified')})`;
-    }
-
-    // تحديد الإجراء
-    let action = actionOverride;
-    if (!action) {
-      const userRecords = attendanceRecords.filter(rec => rec.userId === userId);
-      const lastRecord = userRecords.length > 0 ? userRecords[userRecords.length - 1] : null;
-      action = lastRecord?.action === 'check-in' ? 'check-out' : 'check-in';
-    }
-
-    // حفظ السجل
-    const newRecord = {
-      eventId,
-      sessionId: activeSession.id,
-      userId,
-      userName: displayName,
-      action,
-      timestamp: serverTimestamp(),
-    };
-
-    await addDoc(collection(db, 'attendance'), newRecord);
-    console.log('✅ Attendance saved to Firestore:', newRecord);
-
-    // ✅ اهتزاز فوري
-    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate(200);
-    }
-
-    // ✅ تحديث السجلات
-    setAttendanceRecords(prev => [...prev, newRecord]);
-
-    // ✅ تحديث قوائم الحاضرين والغائبين فورًا
-    if (action === 'check-in' && userObj) {
-      setPresentUsers(prev => {
-        if (!prev.some(u => u.qrId === userId)) {
-          return [...prev, userObj];
-        }
-        return prev;
-      });
-      setAbsentUsers(prev => prev.filter(u => u.qrId !== userId));
-    } else if (action === 'check-out' && userObj) {
-      setPresentUsers(prev => prev.filter(u => u.qrId !== userId));
-      setAbsentUsers(prev => {
-        if (!prev.some(u => u.qrId === userId)) {
-          return [...prev, userObj];
-        }
-        return prev;
-      });
-    }
-
-    const actionText = action === 'check-in' ? t('checkIn') : t('checkOut');
-    setToast({ message: `${actionText} — ${displayName}`, type: 'success' });
-
-  } catch (err) {
-    console.error('Error saving attendance:', err);
-    setToast({ message: t('failedToSaveAttendance'), type: 'error' });
-  }
-};
-
-  // خروج جماعي
-  const handleBulkCheckOut = async () => {
-    if (presentUsers.length === 0) {
-      setToast({ message: t('noOneToCheckOut'), type: 'warning' });
-      return;
-    }
-
-    // عرض مربع الحوار الاحترافي
-    setConfirmAction('bulkCheckOut');
-    setShowConfirmModal(true);
-  };
-
-  // دخول جماعي
-  const handleBulkCheckIn = async () => {
-    const selected = absentUsers.filter(u => document.getElementById(`absent-${u.qrId}`)?.checked);
-    if (selected.length === 0) {
-      setToast({ message: t('selectParticipantsToCheckIn'), type: 'warning' });
-      return;
-    }
-
-    // عرض مربع الحوار الاحترافي
-    setConfirmAction('bulkCheckIn');
-    setShowConfirmModal(true);
-  };
-
-  // تأكيد الإجراء
-  const confirmActionHandler = async () => {
-    setLoading(true);
     try {
-      if (confirmAction === 'bulkCheckOut') {
-        for (const user of presentUsers) {
-          await saveAttendance(user.qrId, 'check-out');
-        }
-        setToast({ message: t('bulkCheckOutSuccess'), type: 'success' });
-      } else if (confirmAction === 'bulkCheckIn') {
-        const selected = absentUsers.filter(u => document.getElementById(`absent-${u.qrId}`)?.checked);
-        for (const user of selected) {
-          await saveAttendance(user.qrId, 'check-in');
-        }
-        setToast({ message: t('bulkCheckInSuccess').replace('{n}', selected.length), type: 'success' });
+      // اهتزاز فوري
+      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate(100);
       }
+
+      // حفظ السجل مباشرة
+      await addDoc(collection(db, 'attendance'), {
+        eventId,
+        sessionId: sessionData.id,
+        userId,
+        action: 'check-in', // نسجل دخول مباشر — لا نبحث في السجلات
+        timestamp: serverTimestamp(),
+      });
+
+      // إشعار نجاح
+      setToast({ message: t('checkInSuccess'), type: 'success' });
+
+      // ✅ تحديث البيانات من المصدر (Firestore) بعد 200ms فقط
+      setTimeout(() => reloadAttendanceData(), 200);
     } catch (err) {
-      console.error('Bulk action error:', err);
-      setToast({ message: t('bulkCheckOutFailed'), type: 'error' });
-    } finally {
-      setLoading(false);
-      setShowConfirmModal(false);
-      setConfirmAction(null);
+      console.error('Scan save error:', err);
+      setToast({ message: t('scanFailed'), type: 'error' });
     }
   };
 
-  // إلغاء الإجراء
-  const cancelActionHandler = () => {
-    setShowConfirmModal(false);
-    setConfirmAction(null);
+  const handleManualCheckIn = async (userId) => {
+    await handleScannedUserId(userId);
   };
 
   const handleSelectSession = (sessId) => {
     const sess = sessionsList.find(s => s.id === sessId);
-    if (sess) {
-      setSessionData(sess);
-    }
+    if (sess) setSessionData(sess);
   };
 
   if (!eventId && !sessionId) {
@@ -348,43 +244,35 @@ const saveAttendance = async (userId, actionOverride = null) => {
   }
 
   return (
-    <div className="min-h-screen bg-light flex flex-col items-center py-6 px-4">
-      <div className="flex justify-between w-full max-w-4xl mb-4">
-        <button
-          onClick={() => router.push(`/?eventId=${eventId}`)}
-          className="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 text-sm font-medium"
-        >
-          ← {t('backToDashboard')}
-        </button>
-      </div>
+    <div className="min-h-screen bg-light flex flex-col items-center py-4 px-2">
+      <button
+        onClick={() => router.push(`/?eventId=${eventId}`)}
+        className="self-start mb-2 px-3 py-1 bg-white rounded shadow text-sm"
+      >
+        ← {t('backToDashboard')}
+      </button>
 
-      <div className="text-center mb-6 w-full max-w-4xl">
-        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-          <span className="text-xl text-primary">📱</span>
-        </div>
-        <h1 className="text-2xl font-bold text-dark">
+      <div className="text-center mb-4 w-full">
+        <h1 className="text-xl font-bold text-dark">
           {t('adminScan')} — {eventData?.name || t('unknownEvent')}
         </h1>
-        <p className="text-gray-600 text-sm mt-1">{t('smartAttendanceControl')}</p>
       </div>
 
-      <div className="w-full max-w-4xl space-y-6">
+      <div className="w-full max-w-md space-y-4">
         {loading ? (
-          <div className="text-center py-10">
+          <div className="text-center py-8">
             <div className="inline-block h-6 w-6 animate-spin rounded-full border-3 border-primary border-t-transparent"></div>
-            <p className="mt-3 text-gray-600">{t('loadingSessions')}</p>
           </div>
         ) : sessionData ? (
           <>
-            {/* الكاميرا */}
-            <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
-              <h3 className="font-bold text-dark mb-3">{t('scanQR')}</h3>
-              <div className="relative bg-gray-900 rounded-xl overflow-hidden h-64">
+            <div className="bg-white rounded-xl shadow p-3">
+              <h3 className="font-bold mb-2">{t('scanQR')}</h3>
+              <div className="relative bg-gray-900 rounded-lg h-56">
                 <div id="qr-reader" className="w-full h-full"></div>
                 {!isScanning && (
                   <button
                     onClick={startScanner}
-                    className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-5 py-2 rounded-lg font-medium z-10"
+                    className="absolute bottom-2 left-1/2 transform -translate-x-1/2 bg-primary text-white px-4 py-1 rounded z-10"
                   >
                     📷 {t('openCamera')}
                   </button>
@@ -392,113 +280,46 @@ const saveAttendance = async (userId, actionOverride = null) => {
               </div>
             </div>
 
-            {/* أزرار التحكم الجماعي */}
-            <div className="flex flex-wrap gap-3 justify-center">
-              <button
-                onClick={handleBulkCheckOut}
-                disabled={presentUsers.length === 0 || loading}
-                className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 ${
-                  presentUsers.length === 0 || loading
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-red-600 text-white hover:bg-red-700'
-                }`}
-              >
-                🚪 {t('bulkCheckOut')}
-              </button>
-              <button
-                onClick={handleBulkCheckIn}
-                disabled={absentUsers.length === 0 || loading}
-                className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 ${
-                  absentUsers.length === 0 || loading
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-green-600 text-white hover:bg-green-700'
-                }`}
-              >
-                👥 {t('bulkCheckIn')}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* الحاضرون الآن */}
-              <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
-                <h3 className="font-bold text-dark mb-3 flex items-center gap-2">
-                  <span className="w-5 h-5 rounded bg-green-100 text-green-600 flex items-center justify-center text-xs">✅</span>
-                  {t('presentNow')} ({presentUsers.length})
-                </h3>
-                {presentUsers.length === 0 ? (
-                  <p className="text-center text-gray-500">{t('noOnePresent')}</p>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
+            {/* لا نعرض القوائم إذا كان العدد كبيرًا — لتوفير الأداء */}
+            {participants.length <= 50 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white p-3 rounded-lg">
+                  <h4 className="font-bold text-green-600">{t('presentNow')} ({presentUsers.length})</h4>
+                  <div className="max-h-32 overflow-y-auto mt-1">
                     {presentUsers.map(p => (
-                      <div
-                        key={p.qrId}
-                        className="flex justify-between items-center p-2 bg-green-50 rounded hover:bg-green-100"
-                      >
-                        <span>{p.name}</span>
-                        <button
-                          onClick={() => saveAttendance(p.qrId, 'check-out')}
-                          className="text-xs bg-white px-2 py-1 rounded hover:bg-red-50 text-red-600"
-                        >
-                          {t('checkOut')}
-                        </button>
-                      </div>
+                      <div key={p.qrId} className="text-sm py-1">{p.name}</div>
                     ))}
                   </div>
-                )}
+                </div>
+                <div className="bg-white p-3 rounded-lg">
+                  <h4 className="font-bold text-gray-600">{t('absentNow')} ({absentUsers.length})</h4>
+                  <div className="max-h-32 overflow-y-auto mt-1">
+                    {absentUsers.slice(0, 10).map(p => (
+                      <div key={p.qrId} className="text-sm py-1">{p.name}</div>
+                    ))}
+                    {absentUsers.length > 10 && <div className="text-xs">+{absentUsers.length - 10} أكثر</div>}
+                  </div>
+                </div>
               </div>
+            )}
 
-              {/* الغائبون */}
-              <div className="bg-white p-4 rounded-2xl shadow border border-gray-100">
-                <h3 className="font-bold text-dark mb-3 flex items-center gap-2">
-                  <span className="w-5 h-5 rounded bg-yellow-100 text-yellow-600 flex items-center justify-center text-xs">⏳</span>
-                  {t('absentNow')} ({absentUsers.length})
-                </h3>
-                {absentUsers.length === 0 ? (
-                  <p className="text-center text-gray-500">{t('everyonePresent')}</p>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {absentUsers.map(p => (
-                      <div
-                        key={p.qrId}
-                        className="flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100"
-                      >
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id={`absent-${p.qrId}`}
-                            className="rounded"
-                          />
-                          <span>{p.name}</span>
-                        </label>
-                        <button
-                          onClick={() => saveAttendance(p.qrId, 'check-in')}
-                          className="text-xs bg-white px-2 py-1 rounded hover:bg-green-50 text-green-600"
-                        >
-                          {t('checkIn')}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {participants.length > 50 && (
+              <div className="text-center text-gray-600 text-sm">
+                ✅ {presentUsers.length} حاضر من أصل {participants.length}
               </div>
-            </div>
+            )}
           </>
         ) : sessionsList.length > 0 ? (
-          <div>
-            <label className="block font-semibold text-dark mb-2">{t('selectSession')}</label>
-            <select
-              className="w-full p-3 border border-gray-300 rounded-lg"
-              onChange={(e) => handleSelectSession(e.target.value)}
-              value={sessionData?.id || ''}
-            >
-              <option value="">{t('selectSessionPlaceholder')}</option>
-              {sessionsList.map((sess) => (
-                <option key={sess.id} value={sess.id}>
-                  {sess.sessionName}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            className="w-full p-2 border rounded"
+            onChange={(e) => handleSelectSession(e.target.value)}
+            value={sessionData?.id || ''}
+          >
+            <option value="">{t('selectSession')}</option>
+            {sessionsList.map(s => (
+              <option key={s.id} value={s.id}>{s.sessionName}</option>
+            ))}
+          </select>
         ) : (
           <p className="text-center text-gray-500">{t('noSessionsAvailable')}</p>
         )}
@@ -506,7 +327,7 @@ const saveAttendance = async (userId, actionOverride = null) => {
         <div className="text-center">
           <button
             onClick={() => router.push(`/?eventId=${eventId}`)}
-            className="text-secondary font-medium hover:underline"
+            className="text-sm text-secondary"
           >
             ← {t('backToDashboard')}
           </button>
@@ -516,34 +337,9 @@ const saveAttendance = async (userId, actionOverride = null) => {
       {toast && (
         <Toast
           message={toast.message}
-          type={toast.type === 'error' ? 'error' : 'success'}
+          type={toast.type}
           onClose={() => setToast(null)}
         />
-      )}
-
-      {/* مربع الحوار الاحترافي */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl shadow-lg max-w-md w-full">
-            <h3 className="text-lg font-bold text-dark mb-4">
-              {confirmAction === 'bulkCheckOut' ? t('confirmBulkCheckOut') : t('confirmBulkCheckIn')}
-            </h3>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={cancelActionHandler}
-                className="px-4 py-2 bg-gray-200 rounded-lg font-medium text-gray-700 hover:bg-gray-300 transition"
-              >
-                {t('cancel')}
-              </button>
-              <button
-                onClick={confirmActionHandler}
-                className="px-4 py-2 bg-primary rounded-lg font-medium text-white hover:bg-primary/90 transition"
-              >
-                {t('confirm')}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
